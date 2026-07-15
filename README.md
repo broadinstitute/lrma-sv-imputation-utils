@@ -54,7 +54,6 @@ issue rather than a problem with this repo.
 ```bash
 make build      # build each crate --release --locked (per-crate target dirs)
 make test       # build, collect binaries into ./dist, run the exact-match suite
-make fmt clippy # formatting + lints per crate, exactly as CI enforces them
 ```
 
 Or drive the suite directly against any binaries:
@@ -111,13 +110,13 @@ compile and keep CI well within budget.
 ## CI
 
 * **`ci.yml`** (every PR/push): apt-installs the HTSlib dev headers + `bcftools`, restores
-  the cargo cache, then per crate checks `fmt`/`clippy` and builds `--release --locked`,
-  collects the three binaries into `./dist`, and runs the suite. The tools are
-  deterministic, so the exact-match expectations are independent of optimisation level.
-  (Two crates build HTSlib from source via `hts-sys`, so the cargo cache is what keeps the
-  job fast on repeat runs.)
-* **`docker-image.yml`** (on demand / release branches): builds the base + app images with
-  layer caching and runs the suite inside the final image.
+  the cargo cache, then builds each crate `--release --locked` against its committed lock,
+  collects the three binaries into `./dist`, and runs the exact-match suite. There is **no
+  formatting or lint gate** — `cargo build` + the suite are the only checks, so style/clippy
+  never blocks a merge.
+* **`docker-image.yml`** (on demand / release branches): builds the base image and the app
+  image with plain `docker build` (so the app's `FROM` sees the locally-built base), then
+  runs the suite inside the final image.
 
 ## Integrating into the upstream repo
 

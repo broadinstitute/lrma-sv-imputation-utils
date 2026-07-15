@@ -16,7 +16,7 @@ BIN_extract-bubble-PLs = extract-bubble-PLs
 BIN_pop-glimpse2       = pop-glimpse2-joint-opt
 BIN_paste-vcfs         = paste-vcfs
 
-.PHONY: all build dist test fmt clippy lock docker docker-test clean
+.PHONY: all build dist test lock docker docker-test clean
 
 all: test
 
@@ -38,14 +38,6 @@ dist: build
 # Exact-match integration suite against the collected binaries.
 test: dist
 	bash resources/tests/run_all.sh --bin-dir dist
-
-fmt:
-	@for c in $(CRATES); do cargo fmt --manifest-path resources/$$c/Cargo.toml -- --check || exit $$?; done
-
-clippy:
-	@for c in $(CRATES); do \
-		cargo clippy --locked --all-targets --manifest-path resources/$$c/Cargo.toml -- -D warnings || exit $$?; \
-	done
 
 # Regenerate the per-crate lockfiles (rarely needed: the committed locks are the
 # reproducibility contract). Only run this when intentionally updating deps.

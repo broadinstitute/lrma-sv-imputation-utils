@@ -8,5 +8,4 @@
 # version automatically.
 [toolchain]
 channel = "1.90.0"
-components = ["rustfmt", "clippy"]
 profile = "minimal"

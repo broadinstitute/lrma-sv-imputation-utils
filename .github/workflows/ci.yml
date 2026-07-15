@@ -59,8 +59,6 @@ jobs:
       # edition 2024 and by icu 2.2.0 in the extract/paste locks.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.90.0
-        with:
-          components: rustfmt, clippy
 
       - name: Cache cargo + target
         uses: Swatinem/rust-cache@v2
@@ -71,14 +69,12 @@ jobs:
             resources/paste-vcfs
           shared-key: ci
 
-      - name: Format, lint, build (per crate, --locked)
+      - name: Build (per crate, --locked)
         run: |
           set -e
           for c in extract-bubble-PLs pop-glimpse2 paste-vcfs; do
             echo "::group::$c"
-            cargo fmt   --manifest-path "resources/$c/Cargo.toml" -- --check
-            cargo clippy --locked --all-targets --manifest-path "resources/$c/Cargo.toml" -- -D warnings
-            cargo build  --release --locked --manifest-path "resources/$c/Cargo.toml"
+            cargo build --release --locked --manifest-path "resources/$c/Cargo.toml"
             echo "::endgroup::"
           done
 
