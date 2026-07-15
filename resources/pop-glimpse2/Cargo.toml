@@ -1,17 +1,8 @@
 [package]
 name = "pop-glimpse2"
 version = "0.1.0"
-edition = "2021"
-# Disable bin auto-discovery: only the joint-opt binary is built, even if other
-# prototype files are ever dropped into src/bin/.
-autobins = false
-
-[[bin]]
-name = "pop-glimpse2-joint-opt"
-path = "src/bin/pop-glimpse2-joint-opt.rs"
+edition = "2024"
 
 [dependencies]
-flate2 = "1"
-# default-features = false keeps mimalloc lean; the crate only uses it as the
-# global allocator.
-mimalloc = { version = "0.1", default-features = false }
+flate2 = "1.1.9"
+mimalloc = "0.1.52"

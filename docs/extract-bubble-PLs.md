@@ -56,6 +56,10 @@ extract_bubble_PLs <gvcf|joint> <panel.bcf> <input.vcf.gz> <output.bcf> \
     [--cap-pl 30] [--scale-pl 5.0] [--threads 4]
 ```
 
+> The string above is the program's own usage message. The **installed binary is
+> `extract-bubble-PLs`** (Cargo names the binary after the crate, with hyphens);
+> the underscore form appears only in the built-in help text.
+
 | Position / flag | Meaning | Default |
 |---|---|---|
 | `mode` (positional 1) | `gvcf` or `joint` — **must** be exactly one of these. Controls padding and the no-match fallback (see §5). | *required* |

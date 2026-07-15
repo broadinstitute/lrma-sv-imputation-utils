@@ -3,17 +3,6 @@ name = "extract-bubble-PLs"
 version = "0.1.0"
 edition = "2021"
 
-# The upstream usage string invokes the tool as `extract_bubble_PLs`
-# (underscores), so the produced binary is named accordingly.
-[[bin]]
-name = "extract_bubble_PLs"
-path = "src/main.rs"
-
 [dependencies]
-anyhow = "1"
-# rust-htslib vendors and builds a pinned HTSlib C library. The FFI surface used
-# here (IndexedReader, Header::from_template_subset, record::GenotypeAllele,
-# rust_htslib::htslib::*) is stable within a minor line. The exact patch is
-# frozen by the committed Cargo.lock; if 0.44 turns out to predate an API used
-# here, bump this minor and re-run `cargo generate-lockfile` (see README).
 rust-htslib = "0.44"
+anyhow = "1.0"

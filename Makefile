@@ -1,44 +1,67 @@
 # Convenience wrappers. `make` targets mirror exactly what CI runs, so a green
 # local run predicts a green pipeline.
+#
+# The three tools are INDEPENDENT crates, each with its own committed Cargo.lock
+# (reproducing the original builds). They are built separately with --locked and
+# their release binaries collected into ./dist so the test harness and the
+# Docker image see them in one place.
 
-# Point this at a prebuilt base image to skip recompiling bcftools locally.
 BASE_IMAGE ?= lrma-aou2-panel-creation-rust:latest
 APP_IMAGE  ?= lrma-aou2-panel-creation-tools:latest
 
-.PHONY: all build test fmt clippy lock docker docker-test clean
+CRATES = extract-bubble-PLs pop-glimpse2 paste-vcfs
 
-all: build test
+# crate -> produced binary name (default Cargo bin naming)
+BIN_extract-bubble-PLs = extract-bubble-PLs
+BIN_pop-glimpse2       = pop-glimpse2-joint-opt
+BIN_paste-vcfs         = paste-vcfs
 
-# Debug build is faster and sufficient for the integration tests.
+.PHONY: all build dist test fmt clippy lock docker docker-test clean
+
+all: test
+
+# Build every crate against its own committed lockfile.
 build:
-	cargo build --workspace --locked
+	@for c in $(CRATES); do \
+		echo ">> building $$c"; \
+		cargo build --release --locked --manifest-path resources/$$c/Cargo.toml || exit $$?; \
+	done
 
-# Exact-match integration suite against the freshly built debug binaries.
-test: build
-	resources/tests/run_all.sh --bin-dir target/debug
+# Collect the release binaries into ./dist (one directory, like the image).
+dist: build
+	@mkdir -p dist
+	@cp resources/extract-bubble-PLs/target/release/extract-bubble-PLs dist/
+	@cp resources/pop-glimpse2/target/release/pop-glimpse2-joint-opt   dist/
+	@cp resources/paste-vcfs/target/release/paste-vcfs                 dist/
+	@echo ">> dist/: $$(ls dist)"
+
+# Exact-match integration suite against the collected binaries.
+test: dist
+	resources/tests/run_all.sh --bin-dir dist
 
 fmt:
-	cargo fmt --all -- --check
+	@for c in $(CRATES); do cargo fmt --manifest-path resources/$$c/Cargo.toml -- --check || exit $$?; done
 
 clippy:
-	cargo clippy --workspace --all-targets --locked -- -D warnings
+	@for c in $(CRATES); do \
+		cargo clippy --locked --all-targets --manifest-path resources/$$c/Cargo.toml -- -D warnings || exit $$?; \
+	done
 
-# One-time (and after any dependency change): create/refresh the committed lock.
+# Regenerate the per-crate lockfiles (rarely needed: the committed locks are the
+# reproducibility contract). Only run this when intentionally updating deps.
 lock:
-	cargo generate-lockfile
+	@for c in $(CRATES); do cargo generate-lockfile --manifest-path resources/$$c/Cargo.toml; done
 
-# Build the final image containing the three release binaries. Pass a prebuilt
-# base to avoid recompiling bcftools:  make docker BASE_IMAGE=...:tag
 docker:
 	docker build -f docker/app/Dockerfile \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
 		-t $(APP_IMAGE) .
 
-# Run the suite *inside* the final image, proving the shipped binaries pass.
-# Tests are bind-mounted, never baked in.
+# Run the suite inside the final image; tests bind-mounted, never baked in.
 docker-test: docker
 	docker run --rm -v "$(CURDIR)/resources/tests:/tests:ro" \
 		$(APP_IMAGE) bash /tests/run_all.sh --bin-dir /usr/local/bin
 
 clean:
-	cargo clean
+	@for c in $(CRATES); do cargo clean --manifest-path resources/$$c/Cargo.toml; done
+	rm -rf dist

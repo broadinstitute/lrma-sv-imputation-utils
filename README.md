@@ -5,7 +5,7 @@ A lightweight, reproducible CI/CD setup for the three Rust helper tools used in 
 
 | Tool | Binary | One-line purpose |
 |---|---|---|
-| `extract-bubble-PLs` | `extract_bubble_PLs` | Project PLs from a gVCF/joint VCF onto a panel's bi-allelic "bubble" sites for GLIMPSE2. |
+| `extract-bubble-PLs` | `extract-bubble-PLs` | Project PLs from a gVCF/joint VCF onto a panel's bi-allelic "bubble" sites for GLIMPSE2. |
 | `pop-glimpse2` | `pop-glimpse2-joint-opt` | Project phased GLIMPSE2 joint posteriors from multi-allelic paths back onto atomic bi-allelic variants. |
 | `paste-vcfs` | `paste-vcfs` | Horizontally concatenate sample columns across VCF/BCFs that share identical sites. |
 
@@ -14,9 +14,11 @@ Per-tool design, every parameter, and the exact math are documented under [`docs
 ## Layout
 
 ```
-Cargo.toml                     workspace (one Cargo.lock for all three crates)
-rust-toolchain.toml            pinned toolchain (rustc + rustfmt + clippy)
-resources/<tool>/              each tool's crate (Cargo.toml + src) — mirrors upstream paths
+rust-toolchain.toml            pinned toolchain (rustc >= 1.86; see below)
+resources/<tool>/              each tool is an INDEPENDENT crate:
+    Cargo.toml                   its manifest (upstream, verbatim)
+    Cargo.lock                   its committed, known-good lockfile
+    src/                         its sources
 resources/tests/               exact-match integration suite (python3 + bcftools only)
 docker/lrma-aou2-panel-creation-rust/Dockerfile   verbatim upstream base image (bcftools + rust)
 docker/app/Dockerfile          multi-stage build of the three release binaries
@@ -25,29 +27,34 @@ docs/                          maintainer documentation, one file per tool
 Makefile                       thin wrappers around the exact commands CI runs
 ```
 
-## One-time bootstrap: create and commit `Cargo.lock`
+The three tools are **separate crates, not a Cargo workspace** — each has its own
+`Cargo.lock`, exactly as they were built upstream. This matters because their dependency
+graphs differ (only two use `rust-htslib`) and they even use different editions
+(`pop-glimpse2` is edition 2024; the others are 2021), which a single shared lock could not
+represent faithfully.
 
-Reproducibility hinges on a committed `Cargo.lock`, and every build here uses `--locked`.
-The lock is **not** generated in this scaffold because valid dependency checksums require
-network access to crates.io. Run this once, then commit the result:
+## Reproducibility: committed lockfiles + pinned toolchain
 
-```bash
-cargo generate-lockfile      # or: make lock
-git add Cargo.lock
-git commit -m "Pin dependency versions"
-```
+Each crate's `resources/<tool>/Cargo.lock` is committed and every build uses `--locked`, so
+dependency versions are frozen to the exact set that was validated upstream (e.g.
+`rust-htslib 0.44.1`, `hts-sys 2.2.0`, `clap 4.6.1`). Nothing needs generating; if you ever
+deliberately update dependencies, run `make lock` (per-crate `cargo generate-lockfile`) and
+commit the changed locks.
 
-`rust-htslib` is pinned to `0.44` in the crate manifests. If that minor turns out to
-predate an API these sources use, bump the `rust-htslib` line in the three
-`resources/*/Cargo.toml`, re-run `cargo generate-lockfile`, and commit again. This is the
-only manual step; after it, CI and Docker builds are fully deterministic.
+The toolchain is pinned to **Rust 1.90** in `rust-toolchain.toml` — the version the original
+builds used. The hard floor is 1.86 regardless: `pop-glimpse2` is `edition = "2024"` (needs
+rustc ≥ 1.85), and the `extract`/`paste` locks pin `icu 2.2.0` (pulled in via
+`rust-htslib` → `url` → `idna`'s default ICU4X back end), which needs rustc ≥ 1.86. `rustup`
+fetches the pinned version automatically. Any newer stable also works; building on an older
+toolchain will fail while parsing/resolving those dependencies, which is a toolchain-floor
+issue rather than a problem with this repo.
 
 ## Building and testing locally
 
 ```bash
-make build      # cargo build --workspace --locked  (debug)
-make test       # build, then run the exact-match suite against target/debug
-make fmt clippy # formatting + lints, exactly as CI enforces them
+make build      # build each crate --release --locked (per-crate target dirs)
+make test       # build, collect binaries into ./dist, run the exact-match suite
+make fmt clippy # formatting + lints per crate, exactly as CI enforces them
 ```
 
 Or drive the suite directly against any binaries:
@@ -104,9 +111,11 @@ compile and keep CI well within budget.
 ## CI
 
 * **`ci.yml`** (every PR/push): apt-installs the HTSlib dev headers + `bcftools`, restores
-  the cargo cache, checks `fmt`/`clippy`, builds `--locked` (debug), and runs the suite.
-  Debug builds keep it under a ~10-minute budget; the tools are deterministic, so
-  optimisation level does not affect output.
+  the cargo cache, then per crate checks `fmt`/`clippy` and builds `--release --locked`,
+  collects the three binaries into `./dist`, and runs the suite. The tools are
+  deterministic, so the exact-match expectations are independent of optimisation level.
+  (Two crates build HTSlib from source via `hts-sys`, so the cargo cache is what keeps the
+  job fast on repeat runs.)
 * **`docker-image.yml`** (on demand / release branches): builds the base + app images with
   layer caching and runs the suite inside the final image.
 
@@ -116,11 +125,12 @@ This scaffold **vendors** the three tool sources under `resources/<tool>/src` (t
 from `sl_aou2_v1`) so the suite is self-contained and CI can compile them. When merging
 into the real repository:
 
-* Keep a single copy of each tool's `src/`. If the upstream tree already has these
-  sources, delete the vendored copies here and let the workspace `members` point at the
-  existing crate directories.
-* If the repo root already has a `Cargo.toml`, merge the `members` list from this one into
-  it rather than overwriting.
+* Each tool stays an independent crate with its own `Cargo.toml` + `Cargo.lock`. If the
+  upstream tree already has these crates, delete the vendored `src/` copies here and point
+  the build/CI/Docker steps at the existing crate directories (they only need the
+  `resources/<tool>/` paths and the committed locks).
+* Keep the per-crate `Cargo.lock` files under version control — they are the reproducibility
+  contract that this setup relies on.
 * The directory paths here mirror upstream (`resources/<tool>/…`,
   `docker/lrma-aou2-panel-creation-rust/…`), so `docs/`, `resources/tests/`, `docker/app/`,
-  the workflows, and the workspace files can be dropped in with minimal reshuffling.
+  the workflows, and `rust-toolchain.toml` can be dropped in with minimal reshuffling.
