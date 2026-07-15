@@ -17,6 +17,11 @@ EXTRACT="$(bin_extract)"
 info "using binary: $EXTRACT"
 
 # 1) (Re)generate deterministic fixtures + expected outputs from the oracle.
+# Fixtures/expected go to a WRITABLE dir: the source dir when writable (native
+# `make test`), else a scratch dir (e.g. `make docker-test`, where the tests
+# tree is bind-mounted read-only). generate.py honours GEN_OUT_DIR.
+DATA="$(writable_datadir "$HERE")"
+export GEN_OUT_DIR="$DATA"
 python3 "${HERE}/generate.py"
 
 SCRATCH="$(new_scratch)"
@@ -24,8 +29,8 @@ SCRATCH="$(new_scratch)"
 # 2) Build the indexed inputs the tool opens via IndexedReader::from_path.
 PANEL_BCF="${SCRATCH}/panel.bcf"
 INPUT_GZ="${SCRATCH}/input.vcf.gz"
-make_bcf   "${HERE}/panel.vcf" "$PANEL_BCF"
-make_vcfgz "${HERE}/input.vcf" "$INPUT_GZ"
+make_bcf   "${DATA}/panel.vcf" "$PANEL_BCF"
+make_vcfgz "${DATA}/input.vcf" "$INPUT_GZ"
 
 # Query format must mirror generate.py's expected files exactly.
 QFMT='%CHROM\t%POS\t%ID\t%REF\t%ALT[\t%GT:%PL]\n'
@@ -47,12 +52,12 @@ run_case() {
 # 3) Cases — each exercises a distinct branch of the matcher.
 #    gvcf, all samples: multiallelic alt-k pick, LPL-over-PL, ref-block hom-ref,
 #                       uncovered ./., <2-allele skip, second contig.
-run_case gvcf        "${HERE}/expected/gvcf.txt"        gvcf
+run_case gvcf        "${DATA}/expected/gvcf.txt"        gvcf
 #    joint, all samples: matched rows emitted, unmatched rows DROPPED.
-run_case joint       "${HERE}/expected/joint.txt"       joint
+run_case joint       "${DATA}/expected/joint.txt"       joint
 #    --samples subset restricts the sample columns.
-run_case samples_S2  "${HERE}/expected/samples_S2.txt"  gvcf --samples "${HERE}/samples_S2.txt"
+run_case samples_S2  "${DATA}/expected/samples_S2.txt"  gvcf --samples "${DATA}/samples_S2.txt"
 #    --region clips the panel iteration to a 0-based-guarded window.
-run_case region      "${HERE}/expected/region.txt"      gvcf --region chr1:1400-2500
+run_case region      "${DATA}/expected/region.txt"      gvcf --region chr1:1400-2500
 
 finish

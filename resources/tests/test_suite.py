@@ -5,7 +5,7 @@ does not reimplement anything -- each test shells out to a per-tool run.sh and
 asserts a zero exit status. Binary discovery honours $BIN_DIR (default
 target/release) exactly as the shell harness does.
 
-    pip install -r resources/tests/requirements-dev.txt
+    pip install pytest
     BIN_DIR=target/debug pytest resources/tests/test_suite.py -v
 """
 

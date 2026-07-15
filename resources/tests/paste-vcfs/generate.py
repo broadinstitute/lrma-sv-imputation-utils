@@ -72,7 +72,8 @@ def write_vcf(path, samples, tag_seed, af_offset=0.0):
 
 
 def main():
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = os.environ.get("GEN_OUT_DIR") or os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(here, exist_ok=True)
     write_vcf(os.path.join(here, "in0.vcf"), ["A1", "A2"], tag_seed=0, af_offset=0.0)
     write_vcf(os.path.join(here, "in1.vcf"), ["B1"],       tag_seed=1, af_offset=0.5)
     write_vcf(os.path.join(here, "in2.vcf"), ["C1", "C2"], tag_seed=2, af_offset=0.3)

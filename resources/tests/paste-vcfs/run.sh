@@ -17,13 +17,18 @@ require_tools
 PASTE="$(bin_paste)"
 info "using binary: $PASTE"
 
+# Fixtures/expected go to a WRITABLE dir: the source dir when writable (native
+# `make test`), else a scratch dir (e.g. `make docker-test`, where the tests
+# tree is bind-mounted read-only). generate.py honours GEN_OUT_DIR.
+DATA="$(writable_datadir "$HERE")"
+export GEN_OUT_DIR="$DATA"
 python3 "${HERE}/generate.py"
 
 SCRATCH="$(new_scratch)"
 
 # Build indexed BCFs (make_bcf writes .csi, needed by region mode).
 for n in in0 in1 in2; do
-  make_bcf "${HERE}/${n}.vcf" "${SCRATCH}/${n}.bcf"
+  make_bcf "${DATA}/${n}.vcf" "${SCRATCH}/${n}.bcf"
 done
 
 # Comparison readouts. Leading columns come from the BASE (in0); sample blocks
@@ -112,7 +117,7 @@ run_case region_bounded -r chr1:200-500 --info AF --format GT,PL,DS -- "${SCRATC
 # --- panic paths -------------------------------------------------------------
 # Site mismatch: a side file whose ALT differs must abort.
 awk 'BEGIN{OFS="\t"} /^#/{print;next} {if(!d){$5=$5"X";d=1} print}' \
-    "${HERE}/in1.vcf" > "${SCRATCH}/in1_bad.vcf"
+    "${DATA}/in1.vcf" > "${SCRATCH}/in1_bad.vcf"
 make_bcf "${SCRATCH}/in1_bad.vcf" "${SCRATCH}/in1_bad.bcf"
 assert_fails_matching "site_mismatch_aborts" "REF/ALT mismatch|Position mismatch|ID mismatch" \
     "$PASTE" --format GT,PL,DS -o "${SCRATCH}/none1.bcf" "${SCRATCH}/in0.bcf" "${SCRATCH}/in1_bad.bcf"
@@ -127,7 +132,7 @@ awk 'BEGIN{OFS="\t"} /^#/{
          else if(i>9){ split(c,p,":"); c=p[1]":"p[2] }
          line=line (i>1?"\t":"") c }
        print line }' \
-    "${HERE}/in1.vcf" > "${SCRATCH}/in1_nods.vcf"
+    "${DATA}/in1.vcf" > "${SCRATCH}/in1_nods.vcf"
 make_bcf "${SCRATCH}/in1_nods.vcf" "${SCRATCH}/in1_nods.bcf"
 assert_fails_matching "format_absent_aborts" "FORMAT tag|mismatch" \
     "$PASTE" --format GT,PL,DS -o "${SCRATCH}/none2.bcf" "${SCRATCH}/in0.bcf" "${SCRATCH}/in1_nods.bcf"

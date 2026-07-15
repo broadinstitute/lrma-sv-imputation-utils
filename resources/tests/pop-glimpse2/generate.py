@@ -367,7 +367,8 @@ def write_expected(path, groups, max_alleles):
 
 
 def main():
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = os.environ.get("GEN_OUT_DIR") or os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(here, exist_ok=True)
     exp = os.path.join(here, "expected")
     os.makedirs(exp, exist_ok=True)
 

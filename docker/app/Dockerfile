@@ -9,7 +9,7 @@
 # Build it, pointing BASE_IMAGE at a prebuilt tag to skip recompiling bcftools:
 #   docker build -f docker/app/Dockerfile \
 #       --build-arg BASE_IMAGE=lrma-aou2-panel-creation-rust:latest \
-#       -t lrma-aou2-panel-creation-tools:latest .
+#       -t lrma-sv-imputation-utils:latest .
 #
 # The three tools are INDEPENDENT crates, each with its own committed Cargo.lock,
 # and are built separately with `--locked` (reproducing the original builds; see

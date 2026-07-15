@@ -7,7 +7,7 @@
 # Docker image see them in one place.
 
 BASE_IMAGE ?= lrma-aou2-panel-creation-rust:latest
-APP_IMAGE  ?= lrma-aou2-panel-creation-tools:latest
+APP_IMAGE  ?= lrma-sv-imputation-utils:latest
 
 CRATES = extract-bubble-PLs pop-glimpse2 paste-vcfs
 

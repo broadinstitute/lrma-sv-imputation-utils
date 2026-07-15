@@ -1,8 +1,0 @@
-##fileformat=VCFv4.2
-##contig=<ID=chr1,length=100000>
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
-chr1	1000	rs1	A	G	.	.	ID=v1
-chr1	1000	rs2	A	T	.	.	ID=v2
-chr1	1001	rs3	C	T	.	.	ID=v3
-chr1	2000	rs4	G	A	.	.	ID=v4
-chr1	2000	rs5	G	C	.	.	ID=v5

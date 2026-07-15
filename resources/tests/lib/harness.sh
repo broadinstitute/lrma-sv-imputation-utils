@@ -193,3 +193,19 @@ new_scratch() {
   local d; d="$(mktemp -d "${_SCRATCH_ROOT}/s.XXXXXX")"
   printf '%s\n' "$d"
 }
+
+# Choose a WRITABLE directory for a suite's generated fixtures/expected. Returns
+# the given source directory if it is writable (native `make test` against a
+# checkout), otherwise a fresh scratch subdirectory (e.g. `make docker-test`,
+# where resources/tests is bind-mounted read-only). The generators honour this
+# via the GEN_OUT_DIR environment variable.
+writable_datadir() {
+  local src="$1" probe
+  probe="${src}/.wtest.$$"
+  if ( : > "$probe" ) 2>/dev/null; then
+    rm -f "$probe"
+    printf '%s\n' "$src"
+  else
+    mktemp -d "${_SCRATCH_ROOT}/data.XXXXXX"
+  fi
+}
