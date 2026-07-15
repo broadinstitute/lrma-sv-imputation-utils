@@ -37,7 +37,7 @@ dist: build
 
 # Exact-match integration suite against the collected binaries.
 test: dist
-	resources/tests/run_all.sh --bin-dir dist
+	bash resources/tests/run_all.sh --bin-dir dist
 
 fmt:
 	@for c in $(CRATES); do cargo fmt --manifest-path resources/$$c/Cargo.toml -- --check || exit $$?; done

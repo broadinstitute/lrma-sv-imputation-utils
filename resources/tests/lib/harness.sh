@@ -177,10 +177,19 @@ finish() {
   exit 0
 }
 
-# Scratch dir shared by a suite; auto-cleaned.
+# Scratch space. IMPORTANT: the root is created here, at source time, in the
+# suite's main shell -- NOT inside new_scratch(). new_scratch() is called as
+# `SCRATCH="$(new_scratch)"`, i.e. in a command-substitution subshell; a
+# `trap ... EXIT` registered inside that function would fire the moment the
+# subshell exits and delete the directory before the caller could use it. By
+# owning the root (and its single EXIT trap) in the main shell, subdirectories
+# handed out by new_scratch() survive until the suite process itself exits.
+_SCRATCH_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/rusttest.XXXXXX")"
+# shellcheck disable=SC2064
+trap 'rm -rf "${_SCRATCH_ROOT:-}"' EXIT
+
+# Hand out a fresh subdirectory under the persistent root.
 new_scratch() {
-  local d; d="$(mktemp -d "${TMPDIR:-/tmp}/rusttest.XXXXXX")"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$d'" EXIT
+  local d; d="$(mktemp -d "${_SCRATCH_ROOT}/s.XXXXXX")"
   printf '%s\n' "$d"
 }

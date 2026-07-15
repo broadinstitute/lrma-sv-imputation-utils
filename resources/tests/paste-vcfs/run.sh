@@ -32,18 +32,38 @@ LEAD_FMT='%CHROM\t%POS\t%ID\t%REF\t%ALT\t%QUAL\t%INFO/AF\n'
 SAMP_FMT='[\t%GT:%PL:%DS]\n'
 
 # make_expected <out> <region-or-empty> <base.bcf> [side.bcf ...]
+#
+# Builds the expected pasted output by re-querying each input and horizontally
+# joining the per-sample blocks. NOTE: we materialise each query into a temp
+# file and then `paste` the files, rather than `paste`-ing bash process
+# substitutions. Storing `<(...)` in an array does NOT work: bash sets up each
+# /dev/fd entry but tears it down as soon as the producing command exits (which
+# is immediate for these tiny inputs), so by the time `paste` runs the FDs are
+# already gone ("paste: /dev/fd/63: No such file or directory").
 make_expected() {
   local out="$1" region="$2"; shift 2
   local base="$1"; shift
   local ropt=()
   [[ -n "$region" ]] && ropt=(-r "$region")
-  local blocks=() f
-  blocks+=(<(bcftools query "${ropt[@]}" -f "$LEAD_FMT" "$base"))
-  blocks+=(<(bcftools query "${ropt[@]}" -f "$SAMP_FMT" "$base"))
+
+  local td; td="$(mktemp -d "${SCRATCH}/exp.XXXXXX")"
+  local files=() i=0 f
+
+  # leading columns + INFO/AF come from the base
+  bcftools query "${ropt[@]}" -f "$LEAD_FMT" "$base" > "${td}/00_lead"
+  files+=("${td}/00_lead")
+  # base's own sample block
+  bcftools query "${ropt[@]}" -f "$SAMP_FMT" "$base" > "${td}/01_base"
+  files+=("${td}/01_base")
+  # each side file's sample block, in order
   for f in "$@"; do
-    blocks+=(<(bcftools query "${ropt[@]}" -f "$SAMP_FMT" "$f"))
+    i=$((i + 1))
+    local bf; bf="${td}/$(printf '%02d' $((i + 1)))_side"
+    bcftools query "${ropt[@]}" -f "$SAMP_FMT" "$f" > "$bf"
+    files+=("$bf")
   done
-  paste -d '' "${blocks[@]}" > "$out"
+
+  paste -d '' "${files[@]}" > "$out"
 }
 
 # run_case <name> <tool-args...> -- <inputs...>
@@ -66,7 +86,10 @@ run_case() {
       fi
     done
     make_expected "${SCRATCH}/${name}.exp" "$region" "${inputs[@]}"
-    bcftools query ${region:+-r "$region"} \
+    # The tool has already restricted its output to $region, so read the whole
+    # output (no -r; it isn't indexed). Comparing that against the region-
+    # filtered inputs also confirms the tool applied the restriction correctly.
+    bcftools query \
         -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\t%QUAL\t%INFO/AF[\t%GT:%PL:%DS]\n' \
         "$out" > "${SCRATCH}/${name}.actual"
     assert_files_equal "$name" "${SCRATCH}/${name}.actual" "${SCRATCH}/${name}.exp" || true

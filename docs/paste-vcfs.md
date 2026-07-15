@@ -106,3 +106,10 @@ over-returns. Multiple regions are processed in the order given.
   input records is dropped. `QUAL` is taken from the base; `FILTER` is not propagated.
 * The first input defines the output contigs, `INFO`/`FORMAT` header definitions, and the
   leading sample block.
+* **Region reads unpack the record.** In region mode records are read through a raw
+  `hts_itr_next` FFI path (`RegionReader`), which returns the record *packed*. Immediately
+  after each read the reader calls `bcf_unpack(rec, BCF_UN_STR)` so the shared string fields
+  (`ID`, `REF`/`ALT`, `FILTER`) are populated — otherwise `base_record.id()`, which reads
+  `bcf1_t.d.id` directly without a lazy unpack, would return empty and the output would
+  carry `ID="."`. This keeps `--region` output identical to whole-file output. (`INFO` and
+  `FORMAT` accessors unpack themselves lazily, so `BCF_UN_STR` is sufficient.)

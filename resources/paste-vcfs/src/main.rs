@@ -83,7 +83,23 @@ impl RegionReader {
                 record.inner() as *const _ as *mut c_void, // inner() accessor + const-cast for FFI write
                 ptr::null_mut(),
             );
-            if ret >= 0 { Some(()) } else { None }
+            if ret >= 0 {
+                // hts_itr_next reads the record but leaves it packed. rust-htslib's
+                // .alleles()/.info()/.format() accessors unpack lazily, but .id()
+                // reads bcf1_t.d.id directly WITHOUT unpacking -- so without this
+                // the region path would emit an empty ID (".") even though set_id()
+                // is called downstream. Unpacking the shared string block (ID,
+                // REF/ALT, FILTER) here mirrors what the safe whole-file reader path
+                // ends up doing and keeps region output identical to whole-file
+                // output.
+                htslib::bcf_unpack(
+                    record.inner() as *const _ as *mut htslib::bcf1_t,
+                    htslib::BCF_UN_STR as c_int,
+                );
+                Some(())
+            } else {
+                None
+            }
         }
     }
 }
