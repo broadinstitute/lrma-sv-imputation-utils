@@ -48,7 +48,7 @@ jobs:
       # Build the base toolchain/bcftools image. Replace this step with a
       # `docker pull` of a prebuilt base to save the from-source bcftools build.
       - name: Build base image (bcftools + rust)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/lrma-aou2-panel-creation-rust/Dockerfile
@@ -58,7 +58,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build app image (release binaries)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/app/Dockerfile
