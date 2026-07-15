@@ -1,0 +1,93 @@
+name: ci
+
+# Lightweight PR/push gate: native (non-Docker) build + exact-match tests.
+# The three tools are independent crates, each built --locked against its own
+# committed Cargo.lock (reproducing the original builds).
+
+on:
+  push:
+    branches: [ main, master, sl_aou2_v1 ]
+    paths:
+      - "resources/**"
+      - "docker/**"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "resources/**"
+      - "docker/**"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # System libraries required to build rust-htslib's vendored HTSlib, plus
+      # bcftools (used by the test harness for all bgzip/index/BCF operations).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential clang cmake \
+            zlib1g-dev libbz2-dev liblzma-dev \
+            libcurl4-openssl-dev libssl-dev libdeflate-dev libgsl-dev \
+            bcftools python3
+
+      # Each crate must ship a committed Cargo.lock; --locked builds fail without
+      # it. Guard early with a clear message.
+      - name: Require committed lockfiles
+        run: |
+          missing=0
+          for c in extract-bubble-PLs pop-glimpse2 paste-vcfs; do
+            if [ ! -f "resources/$c/Cargo.lock" ]; then
+              echo "::error::resources/$c/Cargo.lock is missing (see README)."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
+
+      # Match rust-toolchain.toml. The pin (1.90.0, matching the original builds) is required by pop-glimpse2's
+      # edition 2024 and by icu 2.2.0 in the extract/paste locks.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            resources/extract-bubble-PLs
+            resources/pop-glimpse2
+            resources/paste-vcfs
+          shared-key: ci
+
+      - name: Format, lint, build (per crate, --locked)
+        run: |
+          set -e
+          for c in extract-bubble-PLs pop-glimpse2 paste-vcfs; do
+            echo "::group::$c"
+            cargo fmt   --manifest-path "resources/$c/Cargo.toml" -- --check
+            cargo clippy --locked --all-targets --manifest-path "resources/$c/Cargo.toml" -- -D warnings
+            cargo build  --release --locked --manifest-path "resources/$c/Cargo.toml"
+            echo "::endgroup::"
+          done
+
+      - name: Collect binaries
+        run: |
+          mkdir -p dist
+          cp resources/extract-bubble-PLs/target/release/extract-bubble-PLs dist/
+          cp resources/pop-glimpse2/target/release/pop-glimpse2-joint-opt   dist/
+          cp resources/paste-vcfs/target/release/paste-vcfs                 dist/
+
+      - name: Integration suite (exact-match)
+        run: bash resources/tests/run_all.sh --bin-dir dist

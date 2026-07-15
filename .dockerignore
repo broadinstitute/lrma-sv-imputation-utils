@@ -1,0 +1,9 @@
+# Keep the build context small and ensure tests/data are never copied into any
+# image layer (the final image must contain only the compiled binaries).
+.git
+**/target
+/dist
+resources/tests
+docs
+*.md
+.github

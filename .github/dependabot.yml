@@ -1,0 +1,61 @@
+# Dependabot version-update configuration.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates
+#
+# Dependabot opens (never auto-merges) pull requests that bump dependencies.
+# Each PR updates the relevant manifest/lockfile and is validated by CI before a
+# human merges it -- so the pinned toolchain + committed Cargo.lock files stay
+# the source of truth, and CI is the safety net for any bump that would raise
+# the MSRV or break a build.
+version: 2
+
+updates:
+  # --------------------------------------------------------------- Rust crates
+  # The three tools are independent crates, each with its own Cargo.toml +
+  # Cargo.lock, so Dependabot watches all three directories. A cargo PR updates
+  # that crate's Cargo.lock (and Cargo.toml if a version range must move); CI
+  # rebuilds it with the pinned toolchain and --locked to confirm it still
+  # compiles and the exact-match suite still passes.
+  - package-ecosystem: "cargo"
+    directories:
+      - "/resources/extract-bubble-PLs"
+      - "/resources/pop-glimpse2"
+      - "/resources/paste-vcfs"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Collapse routine patch/minor bumps into one PR (per crate) to reduce review
+    # noise; major bumps still arrive as individual PRs so they get scrutiny.
+    groups:
+      cargo-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "cargo"
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # ------------------------------------------------------------ GitHub Actions
+  # Keeps the action pins in .github/workflows current (actions/checkout,
+  # dtolnay/rust-toolchain, Swatinem/rust-cache, docker/setup-buildx-action,
+  # docker/build-push-action, ...).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"

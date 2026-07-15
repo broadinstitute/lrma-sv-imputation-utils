@@ -1,0 +1,79 @@
+name: docker-image
+
+# Builds the final tools image and runs the exact-match suite INSIDE it, so we
+# verify the shipped binaries (not just a native build) pass. Tests are
+# bind-mounted at run time and never baked into the image.
+#
+# The base image (docker/lrma-aou2-panel-creation-rust/Dockerfile) compiles
+# bcftools from source, which is slow; this workflow therefore runs on demand /
+# on release branches rather than on every PR. If a prebuilt base image is
+# available in a registry, set BASE_IMAGE below to it and drop the base build
+# step to stay comfortably within budget.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "resources/**"
+      - "docker/**"
+      - "rust-toolchain.toml"
+      - ".github/workflows/docker-image.yml"
+
+env:
+  BASE_IMAGE: lrma-aou2-panel-creation-rust:ci
+  APP_IMAGE: lrma-sv-imputation-utils:ci
+
+jobs:
+  build-and-test-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Require committed lockfiles
+        run: |
+          missing=0
+          for c in extract-bubble-PLs pop-glimpse2 paste-vcfs; do
+            if [ ! -f "resources/$c/Cargo.lock" ]; then
+              echo "::error::resources/$c/Cargo.lock is missing (see README)."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
+
+      # Build the base toolchain/bcftools image. Replace this step with a
+      # `docker pull` of a prebuilt base to save the from-source bcftools build.
+      - name: Build base image (bcftools + rust)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/lrma-aou2-panel-creation-rust/Dockerfile
+          tags: ${{ env.BASE_IMAGE }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build app image (release binaries)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/app/Dockerfile
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+          tags: ${{ env.APP_IMAGE }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Run the suite inside the final image against /usr/local/bin, with the
+      # tests bind-mounted read-only (never part of the image).
+      - name: Run exact-match suite inside the image
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/resources/tests:/tests:ro" \
+            ${{ env.APP_IMAGE }} \
+            bash /tests/run_all.sh --bin-dir /usr/local/bin

@@ -1,0 +1,23 @@
+# Per-crate build outputs (independent crates -> per-crate target dirs).
+**/target
+/dist
+**/*.rs.bk
+
+# NOTE: Cargo.lock files ARE committed (one per crate) -- they are the
+# reproducibility contract and must not be ignored.
+
+# Test scratch + generated fixtures/expected are produced on demand by the
+# generate.py scripts; regenerate rather than commit them.
+resources/tests/**/panel.vcf
+resources/tests/**/input.vcf
+resources/tests/**/main.vcf
+resources/tests/**/sites.vcf
+resources/tests/**/ids.vcf
+resources/tests/**/in[0-9].vcf
+resources/tests/**/samples_*.txt
+resources/tests/**/expected/
+*.bcf
+*.bcf.csi
+*.vcf.gz
+*.vcf.gz.tbi
+*.vcf.gz.csi
