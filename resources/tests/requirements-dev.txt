@@ -1,0 +1,3 @@
+# Optional: only needed to run the suites via pytest instead of run_all.sh.
+# The suites themselves require nothing beyond python3 (stdlib) + bcftools.
+pytest>=7,<9

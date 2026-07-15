@@ -1,0 +1,14 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=100000>
+##contig=<ID=chr2,length=100000>
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position">
+##ALT=<ID=NON_REF,Description="Non-ref block">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred likelihoods">
+##FORMAT=<ID=LPL,Number=.,Type=Integer,Description="Local PL">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2
+chr1	1000	.	A	G,C	.	.	.	GT:PL	0/1:0,10,50,20,60,70	1/2:30,20,0,45,5,60
+chr1	1500	.	C	T	.	.	.	GT:PL:LPL	0/0:5,5,5:0,15,99	0/1:5,5,5:20,0,40
+chr1	1900	.	A	<NON_REF>	.	.	END=2100	GT:GQ	0/0:35	0/0:12
+chr2	1000	.	A	T	.	.	.	GT:PL	0/1:0,8,88	0/0:0,50,120

@@ -1,0 +1,7 @@
+# Pin the toolchain so local builds, CI, and the Docker image all compile with
+# the same rustc. Bump deliberately (and re-run `cargo generate-lockfile` if a
+# dependency needs it). components ensure `cargo fmt`/`cargo clippy` are present.
+[toolchain]
+channel = "1.82.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

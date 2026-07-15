@@ -1,0 +1,13 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=1000000>
+##contig=<ID=chr2,length=1000000>
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele frequency">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred likelihoods">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	C1	C2
+chr1	100	rs1	A	G	.	.	AF=0.40	GT:PL:DS	1/1:20,33,47:0.00	0/1:30,43,57:0.10
+chr1	250	rs2	C	T	.	.	AF=0.55	GT:PL:DS	0/1:21,34,48:0.01	1/1:31,44,58:0.11
+chr1	400	rs3	G	A	.	.	AF=0.70	GT:PL:DS	1/1:22,35,49:0.02	0/0:32,45,59:0.12
+chr1	900	rs4	T	C	.	.	AF=0.35	GT:PL:DS	0/0:23,36,50:0.03	0/1:33,46,60:0.13
+chr2	150	rs5	A	C	.	.	AF=0.63	GT:PL:DS	0/1:24,37,51:0.04	1/1:34,47,61:0.14
