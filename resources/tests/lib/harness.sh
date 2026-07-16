@@ -73,7 +73,7 @@ resolve_bin() {
 }
 
 bin_extract()     { resolve_bin EXTRACT_BUBBLE_PLS_BIN "extract_bubble_PLs extract-bubble-PLs"; }
-bin_popglimpse()  { resolve_bin POP_GLIMPSE2_BIN       "pop-glimpse2-joint-opt"; }
+bin_popglimpse()  { resolve_bin POP_GLIMPSE2_BIN       "pop-glimpse2"; }
 bin_paste()       { resolve_bin PASTE_VCFS_BIN         "paste-vcfs paste_vcfs"; }
 
 # --------------------------------------------------------------------------

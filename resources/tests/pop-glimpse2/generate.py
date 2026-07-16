@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate fixtures + expected output for pop-glimpse2-joint-opt.
+"""Generate fixtures + expected output for pop-glimpse2.
 
 The tool does f32 arithmetic, so this is a *faithful f32 re-implementation*
 (every intermediate is rounded to f32 via struct pack/unpack, exactly as the

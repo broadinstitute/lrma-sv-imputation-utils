@@ -8,7 +8,7 @@ engineers who did not write them can maintain the pipeline that calls them.
 | Tool | Source | One-line purpose |
 |---|---|---|
 | [`extract_bubble_PLs`](extract-bubble-PLs.md) | `resources/extract-bubble-PLs/` | Re-express an input callset's genotype likelihoods (`PL`) on the reference panel's bi-allelic bubble grid, for GLIMPSE2. |
-| [`pop-glimpse2-joint-opt`](pop-glimpse2-joint-opt.md) | `resources/pop-glimpse2/` | Project GLIMPSE2 phased per-path posteriors back onto the constituent atomic bi-allelic variants (`GT:DS:GP`). |
+| [`pop-glimpse2`](pop-glimpse2.md) | `resources/pop-glimpse2/` | Project GLIMPSE2 phased per-path posteriors back onto the constituent atomic bi-allelic variants (`GT:DS:GP`). |
 | [`paste-vcfs`](paste-vcfs.md) | `resources/paste-vcfs/` | Column-bind per-sample data from row-aligned cohort shards into one wide BCF. |
 
 ## Where they sit in the pipeline
@@ -22,7 +22,7 @@ engineers who did not write them can maintain the pipeline that calls them.
                                                                       │
                                               multi-allelic per-path posteriors (GT:GP)
                                                                       ▼
-                                                        [pop-glimpse2-joint-opt] ── per-atomic-variant GT:DS:GP
+                                                           [pop-glimpse2] ── per-atomic-variant GT:DS:GP
                                                                       │
                                          (cohort was sharded by sample for the steps above)
                                                                       ▼
@@ -34,7 +34,7 @@ engineers who did not write them can maintain the pipeline that calls them.
 Each tool has an automated, exact-match test suite under
 [`resources/tests/`](../resources/tests/). `extract_bubble_PLs` and `paste-vcfs` are
 verified against deterministically-generated expected output (integer / structural, so
-bit-exact); `pop-glimpse2-joint-opt` uses characterization ("golden") tests because its
+bit-exact); `pop-glimpse2` uses characterization ("golden") tests because its
 output is `f32`. See [`resources/tests/README.md`](../resources/tests/README.md) and the
 top-level [`README.md`](../README.md).
 

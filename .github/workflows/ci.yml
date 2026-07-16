@@ -82,7 +82,7 @@ jobs:
         run: |
           mkdir -p dist
           cp resources/extract-bubble-PLs/target/release/extract-bubble-PLs dist/
-          cp resources/pop-glimpse2/target/release/pop-glimpse2-joint-opt   dist/
+          cp resources/pop-glimpse2/target/release/pop-glimpse2             dist/
           cp resources/paste-vcfs/target/release/paste-vcfs                 dist/
 
       - name: Integration suite (exact-match)

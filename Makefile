@@ -13,7 +13,7 @@ CRATES = extract-bubble-PLs pop-glimpse2 paste-vcfs
 
 # crate -> produced binary name (default Cargo bin naming)
 BIN_extract-bubble-PLs = extract-bubble-PLs
-BIN_pop-glimpse2       = pop-glimpse2-joint-opt
+BIN_pop-glimpse2       = pop-glimpse2
 BIN_paste-vcfs         = paste-vcfs
 
 .PHONY: all build dist test lock docker docker-test clean
@@ -31,7 +31,7 @@ build:
 dist: build
 	@mkdir -p dist
 	@cp resources/extract-bubble-PLs/target/release/extract-bubble-PLs dist/
-	@cp resources/pop-glimpse2/target/release/pop-glimpse2-joint-opt   dist/
+	@cp resources/pop-glimpse2/target/release/pop-glimpse2             dist/
 	@cp resources/paste-vcfs/target/release/paste-vcfs                 dist/
 	@echo ">> dist/: $$(ls dist)"
 
