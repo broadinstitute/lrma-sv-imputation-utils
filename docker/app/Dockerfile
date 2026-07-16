@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
     done; \
     mkdir -p /out; \
     cp resources/extract-bubble-PLs/target/release/extract-bubble-PLs /out/; \
-    cp resources/pop-glimpse2/target/release/pop-glimpse2-joint-opt   /out/; \
+    cp resources/pop-glimpse2/target/release/pop-glimpse2             /out/; \
     cp resources/paste-vcfs/target/release/paste-vcfs                 /out/; \
     strip /out/* || true
 
@@ -55,7 +55,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 FROM ${BASE_IMAGE}
 
 COPY --from=build /out/extract-bubble-PLs      /usr/local/bin/extract-bubble-PLs
-COPY --from=build /out/pop-glimpse2-joint-opt  /usr/local/bin/pop-glimpse2-joint-opt
+COPY --from=build /out/pop-glimpse2            /usr/local/bin/pop-glimpse2
 COPY --from=build /out/paste-vcfs              /usr/local/bin/paste-vcfs
 
 # Sanity check that a binary is on PATH and dynamically resolvable.

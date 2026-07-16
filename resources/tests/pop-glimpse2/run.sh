@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Integration tests for pop-glimpse2-joint-opt.
+# Integration tests for pop-glimpse2.
 #
 # The tool reads a multiallelic VCF on STDIN plus two file arguments
 # (biallelic-ID VCF, sites VCF) and writes the projected VCF to STDOUT. No

@@ -1,6 +1,6 @@
-# `pop-glimpse2-joint-opt`
+# `pop-glimpse2`
 
-Source: `resources/pop-glimpse2/src/bin/pop-glimpse2-joint-opt.rs`
+Source: `resources/pop-glimpse2/src/bin/pop-glimpse2.rs`
 
 ## 1. High-level function
 
@@ -8,7 +8,7 @@ GLIMPSE2 imputes the panel as **multi-allelic "bubbles"**: each bubble site offe
 ALT *paths*, and every path is really a concatenation of one or more **atomic** bi-allelic
 variants (SNPs/indels) that a graph/DAG representation collapsed into a single site.
 
-`pop-glimpse2-joint-opt` performs the inverse projection. Given GLIMPSE2's **phased
+`pop-glimpse2` performs the inverse projection. Given GLIMPSE2's **phased
 posterior probabilities** over the bubble paths, it computes, **for each haplotype
 separately**, a probability distribution over the paths and then **redistributes that
 probability onto the constituent atomic variants**, emitting one bi-allelic record per
@@ -43,7 +43,7 @@ present on the output).
 ## 3. Command-line interface
 
 ```
-cat <multiallelic VCF> | pop-glimpse2-joint-opt <biallelic ID VCF> <sites VCF> \
+cat <multiallelic VCF> | pop-glimpse2 <biallelic ID VCF> <sites VCF> \
     [max_alleles] [window_size]
 ```
 

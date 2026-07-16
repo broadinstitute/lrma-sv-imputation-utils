@@ -6,7 +6,7 @@ A lightweight, reproducible CI/CD setup for the three Rust helper tools used in 
 | Tool | Binary | One-line purpose |
 |---|---|---|
 | `extract-bubble-PLs` | `extract-bubble-PLs` | Project PLs from a gVCF/joint VCF onto a panel's bi-allelic "bubble" sites for GLIMPSE2. |
-| `pop-glimpse2` | `pop-glimpse2-joint-opt` | Project phased GLIMPSE2 joint posteriors from multi-allelic paths back onto atomic bi-allelic variants. |
+| `pop-glimpse2` | `pop-glimpse2` | Project phased GLIMPSE2 joint posteriors from multi-allelic paths back onto atomic bi-allelic variants. |
 | `paste-vcfs` | `paste-vcfs` | Horizontally concatenate sample columns across VCF/BCFs that share identical sites. |
 
 Per-tool design, every parameter, and the exact math are documented under [`docs/`](docs/).
