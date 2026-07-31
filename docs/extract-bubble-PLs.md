@@ -14,7 +14,7 @@ stitched together. This bubble-representation convention is inherited from the P
 of the more scalable methods ultimately used for All of Us Phase 1 and 2 genotyping/imputation.
 See https://pangenie.readthedocs.io/en/latest/nested.html for useful background on bubble representation.
 
-In order to perform imputation against such a set of bubble alleles, GLIMPSE2 needs genotype likelihood evidence from at least a subset
+In order to perform imputation against such a set of bubble alleles, GLIMPSE2 needs genotype-likelihood evidence from at least a subset
 of the alleles (it can perform pure imputation at the rest). As a subset, we can typically choose bubble alleles that are "simple"
 (i.e., they consist of a single constituent) SNV/indels that are either above a given allele-frequency threshold or originate from bubbles that also contain SVs.
 The main difficulty is then mapping input alleles in their given REF/ALT representation
