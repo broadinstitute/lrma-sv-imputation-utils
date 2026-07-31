@@ -22,7 +22,7 @@ separately**, a probability distribution over the paths and then **redistributes
 probability onto the constituent atomic variants**, emitting one bi-allelic record per
 atomic variant with a reconstructed `GT`, dosage `DS`, and genotype posteriors `GP`.
 
-In one sentence: **it turns per-path phased GLIMPSE2 output back into per-atomic-variant
+To summarize, this tool **turns per-path phased GLIMPSE2 output back into per-atomic-variant
 phased dosages and genotype probabilities.**
 
 ## 2. Design
