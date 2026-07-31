@@ -15,6 +15,15 @@ identical site list, producing one wide BCF.**
 This is used to reassemble a cohort that was split by sample for parallel processing (e.g.
 per-shard GLIMPSE2 runs) back into a single callset, without the cost of a coordinate merge.
 
+This is essentially a lean version of bcftools merge. However, unlike in that tool, because 
+our inputs are guaranteed to have identical bi-allelic sites, we don't perform any normalization,
+create multi-allelic sites, or perform any other expensive operations. Note also that `bcftools merge --merge none`,
+which ostensibly performs a merge without creating multi-allelic sites (which, one would think, constitutes a
+pure paste), actually performs normalization as well. This is true as of v1.21, even when trivially merging
+a single sample with `--force-single`. These normalizations are undesirable and we further want to minimize runtime;
+hence, the existence of this tool.
+
+
 ## 2. Design
 
 Correctness rests on the caller's guarantee that all inputs are **row-aligned**: the same
