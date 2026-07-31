@@ -1,15 +1,16 @@
 # Rust helper tools — reference documentation
 
 Three small Rust binaries support the AoU Phase 2 long-reads panel-creation and imputation
-pipeline. They are deliberately narrow, streaming, HTSlib-based tools. This directory
+pipeline. They are deliberately narrow, streaming, HTSlib-based tools and were developed with
+the assistance of Gemini 3.1 Pro over several iterations. This directory
 documents what each one does, how it is invoked, and the exact math it performs, so that
 engineers who did not write them can maintain the pipeline that calls them.
 
 | Tool | Source | One-line purpose |
 |---|---|---|
-| [`extract_bubble_PLs`](extract-bubble-PLs.md) | `resources/extract-bubble-PLs/` | Re-express an input callset's genotype likelihoods (`PL`) on the reference panel's bi-allelic bubble grid, for GLIMPSE2. |
+| [`extract_bubble_PLs`](extract-bubble-PLs.md) | `resources/extract-bubble-PLs/` | Re-express an input callset's genotype likelihoods (`PL`) on the reference panel's bi-allelic bubble grid (or a subset thereof), for GLIMPSE2. |
 | [`pop-glimpse2`](pop-glimpse2.md) | `resources/pop-glimpse2/` | Project GLIMPSE2 phased per-path posteriors back onto the constituent atomic bi-allelic variants (`GT:DS:GP`). |
-| [`paste-vcfs`](paste-vcfs.md) | `resources/paste-vcfs/` | Column-bind per-sample data from row-aligned cohort shards into one wide BCF. |
+| [`paste-vcfs`](paste-vcfs.md) | `resources/paste-vcfs/` | Essentially a lean version of bcftools merge; column-bind per-sample data from row-aligned cohort shards into one wide BCF. |
 
 ## Where they sit in the pipeline
 
