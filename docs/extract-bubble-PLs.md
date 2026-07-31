@@ -12,7 +12,7 @@ single REF/ALT site that GLIMPSE2 will impute. Each multi-allelic bubble is esse
 can consist of multiple constituent SNV/indel/SV alleles (which may have been individually called by different variant callers upstream)
 stitched together. This bubble-representation convention is inherited from the PanGenie method, which was a progenitor
 of the more scalable methods ultimately used for All of Us Phase 1 and 2 genotyping/imputation.
-See https://pangenie.readthedocs.io/en/latest/nested.html for useful background on this bubble representation.
+See https://pangenie.readthedocs.io/en/latest/nested.html for useful background on bubble representation.
 
 In order to perform imputation against such a set of bubble alleles, GLIMPSE2 needs genotype likelihood evidence from at least a subset
 of the alleles (it can perform pure imputation at the rest). As a subset, we can typically choose bubble alleles that are "simple"
