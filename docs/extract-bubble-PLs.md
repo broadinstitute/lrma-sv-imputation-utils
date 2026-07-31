@@ -55,8 +55,8 @@ orderings differ.
 
 ### Custom index adapter (`##idx##`)
 
-Both the panel and input path arguments accept a Cromwell/WDL-style
-`path/to/file.bcf##idx##path/to/file.bcf.csi` suffix. When present, the tool symlinks the
+Both the panel and input path arguments accept a bcftools-style
+`path/to/file.bcf##idx##path/to/file.bcf.csi` suffix to specify a custom index path. When present, the tool symlinks the
 provided index next to the data file (if the expected `.csi`/`.tbi` name does not already
 exist) so that HTSlib's index auto-detection succeeds. This lets the tool run against
 localized files whose indexes were delocalized to a different name.
