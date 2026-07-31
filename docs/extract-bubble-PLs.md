@@ -4,20 +4,33 @@ Source: `resources/extract-bubble-PLs/src/main.rs`
 
 ## 1. High-level function
 
-`extract_bubble_PLs` builds the **per-sample likelihood evidence** that GLIMPSE2 needs
-in order to impute a cohort against a reference panel.
+`extract_bubble_PLs` extracts from input callsets the **per-sample likelihood evidence**
+that GLIMPSE2 needs in order to perform imputation against a reference panel.
 
-The reference panel is a **bi-allelic BCF** in which every record is one "bubble" — a
-single REF/ALT site that GLIMPSE2 will impute. For each panel bubble the tool walks an
-input callset (either a per-sample **gVCF** or a multi-sample **joint VCF**) and copies
-the genotype likelihoods (`PL`) for that exact allele onto the panel coordinate, emitting
-a new bi-allelic BCF whose sites are *identical to the panel* but whose `FORMAT` carries
-`GT` and a rescaled `PL` for every requested sample.
+The reference panel on which GLIMPSE2 operates is a **bi-allelic BCF** in which every record is an allele originating from multi-allelic "bubbles" — i.e., each record is a
+single REF/ALT site that GLIMPSE2 will impute. Each multi-allelic bubble is essentially a non-overlapping region of variation, and each bubble allele is essentially a short haplotype and 
+can consist of multiple constituent SNV/indel/SV alleles (which may have been individually called by different variant callers upstream)
+stitched together. This bubble-representation convention is inherited from the PanGenie method, which was a progenitor
+of the more scalable methods ultimately used for All of Us Phase 1 and 2 genotyping/imputation.
+See https://pangenie.readthedocs.io/en/latest/nested.html for useful background on this bubble representation.
 
-In one sentence: **it re-expresses the input callset's likelihoods on the fixed panel
-coordinate grid, one bi-allelic row per panel site.**
+In order to perform imputation against such a set of bubble alleles, GLIMPSE2 needs genotype likelihood evidence from at least a subset
+of the alleles (it can perform pure imputation at the rest). As a subset, we can typically choose bubble alleles that are "simple"
+(i.e., they consist of a single constituent) SNV/indels that are either above a given allele-frequency threshold or originate from bubbles that also contain SVs.
+The main difficulty is then mapping input alleles in their given REF/ALT representation
+(e.g., from DRAGEN, HaplotypeCaller, DeepVariant, etc.) to their bubble representation, since the latter may contain flanking sequence.
 
-The output BCF is the direct input to GLIMPSE2's likelihood phase.
+For each panel bubble allele, the tool thus walks an input callset (either a per-sample **gVCF** 
+or a multi-sample **joint VCF**), reconciles input/panel representations, and copies the genotype likelihoods (`PL`) for matches
+onto the panel representation, emitting a new bi-allelic BCF whose sites are
+*identical to the panel* but whose `FORMAT` carries `GT` and a `PL` for every requested sample.
+
+Furthermore, alongside this mapping, we also perform rescaling of the `PL`s. This is because the typical input for SV imputation is 30x srWGS, while GLIMPSE is more typically run on low-pass srWGS.
+Rescaling allows us to soften the `PL`s, artificially decreasing the quality of the input and essentially downsampling coverage. This brings the likelihoods more in line
+with that expected by the GLIMPSE HMM and also allows more robustness against srWGS calling errors (which may be more prevalent in the difficult regions covered 
+by the SV imputation panel, which is derived from long reads that better cover these regions).
+
+The output BCF is the direct input to the GLIMPSE2 `phase` tool.
 
 ## 2. Design
 
