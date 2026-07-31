@@ -4,11 +4,19 @@ Source: `resources/pop-glimpse2/src/bin/pop-glimpse2.rs`
 
 ## 1. High-level function
 
-GLIMPSE2 imputes the panel as **multi-allelic "bubbles"**: each bubble site offers several
-ALT *paths*, and every path is really a concatenation of one or more **atomic** bi-allelic
-variants (SNPs/indels) that a graph/DAG representation collapsed into a single site.
+The imputation panel fundamentally consists of **multi-allelic "bubbles"**: each bubble site offers several
+ALT haplotype *paths*, and each path is really a concatenation of one or more **atomic** bi-allelic
+variants (SNPs/indels/SVs). See `docs/extract-bubble-PLs.md` for background on bubble representation.
 
-`pop-glimpse2` performs the inverse projection. Given GLIMPSE2's **phased
+For the purposes of using this panel with GLIMPSE2, we first split these multi-allelics to bi-allelics. This is
+required by GLIMPSE2, which runs an HMM that is fundamentally bi-allelic. Such naive treatment of multi-allelics
+when using GLIMPSE2 is standard. Unfortunately, this means that GLIMPSE2 can emit combinations of haplotypes that do not respect ploidy;
+e.g., it could emit hom-alt for all paths in a given multi-allelic bubble. (Even though it would seem that the zero genetic
+distance between all sites in a bubble should suppress such emission in the HMM, it seems in practice this is not the case;
+perhaps the emission error term relaxes this constraint sufficiently.)
+
+`pop-glimpse2` thus inverts the conversion to bubble representation, while simultaneously resolving consistent haplotypes
+from all of the paths emitted by GLIMPSE2. Given GLIMPSE2's **phased
 posterior probabilities** over the bubble paths, it computes, **for each haplotype
 separately**, a probability distribution over the paths and then **redistributes that
 probability onto the constituent atomic variants**, emitting one bi-allelic record per
