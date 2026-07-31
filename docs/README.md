@@ -8,9 +8,9 @@ engineers who did not write them can maintain the pipeline that calls them.
 
 | Tool | Source | One-line purpose |
 |---|---|---|
-| [`extract_bubble_PLs`](extract-bubble-PLs.md) | `resources/extract-bubble-PLs/` | Re-express an input callset's genotype likelihoods (`PL`) on the reference panel's bi-allelic bubble grid (or a subset thereof), for GLIMPSE2. |
-| [`pop-glimpse2`](pop-glimpse2.md) | `resources/pop-glimpse2/` | Project GLIMPSE2 phased per-path posteriors back onto the constituent atomic bi-allelic variants (`GT:DS:GP`). |
-| [`paste-vcfs`](paste-vcfs.md) | `resources/paste-vcfs/` | Essentially a lean version of bcftools merge; column-bind per-sample data from row-aligned cohort shards into one wide BCF. |
+| [`extract_bubble_PLs`](extract-bubble-PLs.md) | `resources/extract-bubble-PLs/` | Project PLs from a gVCF/joint VCF onto a panel's bi-allelic "bubble" sites (or a subset thereof) for GLIMPSE2. |
+| [`pop-glimpse2`](pop-glimpse2.md) | `resources/pop-glimpse2/` | Project GLIMPSE2 phased per-path posteriors back onto the constituent atomic bi-allelic variants (yielding `GT:DS:GP`). |
+| [`paste-vcfs`](paste-vcfs.md) | `resources/paste-vcfs/` | Essentially a lean version of bcftools merge; horizontally concatenate sample columns across VCF/BCFs that share identical sites. |
 
 ## Where they sit in the pipeline
 
