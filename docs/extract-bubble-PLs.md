@@ -76,7 +76,7 @@ extract_bubble_PLs <gvcf|joint> <panel.bcf> <input.vcf.gz> <output.bcf> \
 | Position / flag | Meaning | Default |
 |---|---|---|
 | `mode` (positional 1) | `gvcf` or `joint` — **must** be exactly one of these. Controls padding and the no-match fallback (see §5). | *required* |
-| `panel.bcf` (positional 2) | Bi-allelic, **indexed** panel BCF. Supplies output contigs, coordinates, IDs, and REF/ALT. May carry the `##idx##` suffix. | *required* |
+| `panel.bcf` (positional 2) | Bi-allelic, **indexed** panel BCF. Typically, a sites-only containing a subset of SNV/indels. Supplies output contigs, coordinates, IDs, and REF/ALT. May carry the `##idx##` suffix. | *required* |
 | `input.vcf.gz` (positional 3) | The **indexed** input callset (gVCF or joint VCF) to harvest likelihoods from. May carry the `##idx##` suffix. | *required* |
 | `output.bcf` (positional 4) | Path of the BCF to write. | *required* |
 | `--region chr:start-end` | Restrict processing to one contig / interval (1-based, inclusive). `chr` alone, `chr:pos`, and `chr:start-end` are all accepted. Used for sharding. | whole file |
