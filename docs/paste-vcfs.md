@@ -9,9 +9,6 @@ BCF/`VCF.GZ` files that describe **exactly the same sites in exactly the same or
 holding a *different set of samples*, and glues their sample columns together side-by-side
 into one multi-sample BCF. Selected `INFO` and `FORMAT` fields are carried through.
 
-In one sentence: **it column-binds per-sample data from cohort shards that share an
-identical site list, producing one wide BCF.**
-
 This is used to reassemble a cohort that was split by sample for parallel processing (e.g.
 per-shard GLIMPSE2 runs) back into a single callset, without the cost of a coordinate merge.
 
