@@ -22,6 +22,9 @@ separately**, a probability distribution over the paths and then **redistributes
 probability onto the constituent atomic variants**, emitting one bi-allelic record per
 atomic variant with a reconstructed `GT`, dosage `DS`, and genotype posteriors `GP`.
 
+The progenitor PanGenie script (https://github.com/eblerjana/pangenie/blob/v4.2.1/pipelines/run-from-callset/scripts/convert-to-biallelic.py) on which this tool is based
+essentially performs the same operation. However, PanGenie's HMM does attempt to treat multi-allelics, so there is no need to resolve consistent haplotypes there.
+
 To summarize, this tool **turns per-path phased GLIMPSE2 output back into per-atomic-variant
 phased dosages and genotype probabilities.**
 
