@@ -58,7 +58,7 @@ jobs:
       # Match rust-toolchain.toml. The pin (1.90.0, matching the original builds) is required by pop-glimpse2's
       # edition 2024 and by icu 2.2.0 in the extract/paste locks.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.90.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo + target
         uses: Swatinem/rust-cache@v2
