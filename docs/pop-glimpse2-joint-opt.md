@@ -23,22 +23,14 @@ The tool is a three-way **lockstep / windowed streaming** program:
 
 * **stdin** — the multi-allelic imputed VCF (one line per path; paths that belong to the
   same bubble share a `POS`). Must carry `FORMAT/GT` and `FORMAT/GP` for every sample and
-  `INFO` fields `RAF`, `AF`, `INFO`.
+  `INFO/INFO` scores.
 * **arg 1 `<biallelic ID VCF>`** — the atomic-variant dictionary. Each record's
-  `INFO/ID=<atomic_id>` maps an atomic id to its true `(POS, ID, REF, ALT)`. Read into a
-  windowed `id_buffer` (see `window_size`).
-* **arg 2 `<sites VCF>`** — read **in exact lockstep** with stdin (line *i* of sites must
-  have the same `CHROM/POS/REF/ALT` as line *i* of stdin). Its `INFO/ID=<a:b:c>` lists the
-  atomic ids that make up each path. A mismatch aborts the run.
+  `INFO/ID=<atomic_id>` maps an atomic id to its true `(POS, ID, REF, ALT)`. It also extracts the panel frequency from `INFO/AF` or mathematically derives it from `INFO/AC` and `INFO/AN`. Read into a windowed `id_buffer`.
+* **arg 2 `<sites VCF>`** — read **in exact lockstep** with stdin. Its `INFO/ID=<a:b:c>`
+  lists the atomic ids that make up each path. A mismatch aborts the run.
 
 Because the three streams are coordinate-synchronised, the tool holds only one bubble's
 worth of path lines plus a position-windowed slice of the atomic dictionary in memory.
-
-`mimalloc` is installed as the global allocator for throughput.
-
-Header lines from stdin are passed through unchanged **except** that `INFO=<ID=AK...`,
-`FORMAT=<ID=GL...`, and `FORMAT=<ID=KC...` definitions are dropped (those tags are not
-present on the output).
 
 ## 3. Command-line interface
 
@@ -59,8 +51,12 @@ cat <multiallelic VCF> | pop-glimpse2-joint-opt <biallelic ID VCF> <sites VCF> \
 
 Plain VCF written to **stdout**: the retained header, then one bi-allelic record per atomic
 variant (sorted by dictionary `POS`, then `REF`, then `ALT`) with
-`FORMAT = GT:DS:GP` and `INFO = ID=<atomic_id>;RAF=…;AF=…;INFO=…` (the `RAF/AF/INFO` copied
-from the first path that contains the atomic variant).
+`FORMAT = GT:DS:GP` and `INFO = ID=...;RAF=...;AF=...;INFO=...;INFO_MAX_BUBBLE=...`.
+
+*   **`RAF`**: The original panel frequency extracted directly from the `<biallelic ID VCF>`.
+*   **`AF`**: Recomputed directly from the quantized constituent `DS` vector to ensure algebraic symmetry with the denominator.
+*   **`INFO`**: Recomputed IMPUTE-style score exactly mirroring the GLIMPSE2 C++ specification across the projected `GP` distributions.
+*   **`INFO_MAX_BUBBLE`**: The maximum `INFO` score found across all constituent paths within the parent bubble.
 
 ## 5. Mathematics
 
