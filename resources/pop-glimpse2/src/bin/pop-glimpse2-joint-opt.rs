@@ -10,6 +10,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 struct Record {
     atomic_ids: Vec<String>,
+    path_info: f32,
 }
 
 #[derive(Clone)]
@@ -58,17 +59,14 @@ fn process_group(
 
     let mut hap_probs: Vec<Vec<(f32, f32)>> = vec![vec![(0.0, 0.0); num_alleles]; num_samples];
 
-    let mut max_bubble_info: f32 = -1.0;
-    let mut has_max_bubble = false;
-
     for (a, (line, site_info)) in group_lines.iter().enumerate() {
         let fields: Vec<&str> = line.trim_end().split('\t').collect();
 
+        let mut path_info = -1.0_f32;
         for item in fields[7].split(';') {
             if let Some(v) = item.strip_prefix("INFO=") {
                 if let Ok(f) = v.parse::<f32>() {
-                    max_bubble_info = max_bubble_info.max(f);
-                    has_max_bubble = true;
+                    path_info = f;
                 }
             }
         }
@@ -89,7 +87,7 @@ fn process_group(
             }
         }
 
-        records.push(Record { atomic_ids });
+        records.push(Record { atomic_ids, path_info });
 
         let fmt: Vec<&str> = fields[8].split(':').collect();
         let gt_idx = fmt.iter().position(|&x| x == "GT");
@@ -265,8 +263,15 @@ fn process_group(
 
         new_info.push(format!("AF={}", format_float(af)));
         new_info.push(format!("INFO={}", format_float(recalc_info_rounded)));
-        if has_max_bubble {
-            new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_bubble_info)));
+        
+        let mut max_info = -1.0_f32;
+        for rec in &records {
+            if rec.atomic_ids.contains(&assigned_id) {
+                max_info = max_info.max(rec.path_info);
+            }
+        }
+        if max_info >= 0.0 {
+            new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_info)));
         }
 
         let mut vcf_line = vec![
@@ -351,7 +356,7 @@ fn main() {
                 if !seen_raf { writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"Panel reference allele frequency\">").unwrap(); }
                 if !seen_af { writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Recalculated allele frequency\">").unwrap(); }
                 if !seen_info { writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"Recalculated IMPUTE INFO score\">").unwrap(); }
-                if !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble\">").unwrap(); }
+                if !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble for paths containing the variant\">").unwrap(); }
                 writeln!(out_handle, "{}", line).unwrap();
             } else if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
                 writeln!(out_handle, "{}", line).unwrap();
