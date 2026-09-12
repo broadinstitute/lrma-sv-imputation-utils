@@ -72,23 +72,24 @@ def process_group(group, id_buffer, max_alleles):
     num_samples = len(group[0]["samples"])
     chrom = group[0]["chrom"]
     
-    max_bubble_info = -1.0
-    has_max_bubble = False
-    for rec in group:
-        if rec["info"].get("INFO") is not None:
-            max_bubble_info = max(max_bubble_info, float(rec["info"]["INFO"]))
-            has_max_bubble = True
-
     all_atomic = []
     seen = set()
-    # hap_probs[s][a] = (p0, p1)
     hap_probs = [[(0.0, 0.0)] * num_alleles for _ in range(num_samples)]
+    
+    atomic_max_info = {}
 
     for a, rec in enumerate(group):
+        path_info = rec["info"].get("INFO")
+        path_info_val = float(path_info) if path_info is not None else -1.0
+        
         for aid in rec["atomic_ids"]:
             if aid not in seen:
                 seen.add(aid)
                 all_atomic.append(aid)
+            
+            if path_info_val >= 0.0:
+                atomic_max_info[aid] = max(atomic_max_info.get(aid, -1.0), path_info_val)
+                
         for s in range(num_samples):
             gt_val, (g0, g1, g2) = rec["samples"][s]
             gp1 = f32(g1)
@@ -210,8 +211,10 @@ def process_group(group, id_buffer, max_alleles):
 
         info.append("AF=%s" % format_float(af))
         info.append("INFO=%s" % format_float(recalc_info_rounded))
-        if has_max_bubble:
-            info.append("INFO_MAX_BUBBLE=%s" % format_float(max_bubble_info))
+        
+        max_info = atomic_max_info.get(aid, -1.0)
+        if max_info >= 0.0:
+            info.append("INFO_MAX_BUBBLE=%s" % format_float(max_info))
 
         cols[7] = ";".join(info)
         cols.extend(sample_strings)
@@ -398,7 +401,7 @@ def write_expected(path, groups, max_alleles):
                     f.write('##INFO=<ID=RAF,Number=A,Type=Float,Description="Panel reference allele frequency">\n')
                     f.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Recalculated allele frequency">\n')
                     f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="Recalculated IMPUTE INFO score">\n')
-                    f.write('##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble">\n')
+                    f.write('##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble for paths containing the variant">\n')
                 f.write(h + "\n")
         for line in expected_body(groups, max_alleles):
             f.write(line + "\n")
