@@ -9,9 +9,6 @@ use std::time::Instant;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 struct Record {
-    raf: Option<String>,
-    af: Option<String>,
-    info_val: Option<String>,
     atomic_ids: Vec<String>,
 }
 
@@ -42,7 +39,7 @@ fn format_float(val: f32) -> String {
 
 fn process_group(
     group_lines: &[(String, String)],
-    id_buffer: &HashMap<String, (u32, String, String, String)>,
+    id_buffer: &HashMap<String, (u32, String, String, String, String)>,
     max_alleles: usize,
     out_handle: &mut impl Write,
 ) {
@@ -61,16 +58,19 @@ fn process_group(
 
     let mut hap_probs: Vec<Vec<(f32, f32)>> = vec![vec![(0.0, 0.0); num_alleles]; num_samples];
 
+    let mut max_bubble_info: f32 = -1.0;
+    let mut has_max_bubble = false;
+
     for (a, (line, site_info)) in group_lines.iter().enumerate() {
         let fields: Vec<&str> = line.trim_end().split('\t').collect();
 
-        let mut raf = None;
-        let mut af = None;
-        let mut info_val = None;
         for item in fields[7].split(';') {
-            if let Some(v) = item.strip_prefix("RAF=") { raf = Some(v.to_string()); }
-            else if let Some(v) = item.strip_prefix("AF=") { af = Some(v.to_string()); }
-            else if let Some(v) = item.strip_prefix("INFO=") { info_val = Some(v.to_string()); }
+            if let Some(v) = item.strip_prefix("INFO=") {
+                if let Ok(f) = v.parse::<f32>() {
+                    max_bubble_info = max_bubble_info.max(f);
+                    has_max_bubble = true;
+                }
+            }
         }
 
         let mut atomic_ids = Vec::new();
@@ -89,9 +89,7 @@ fn process_group(
             }
         }
 
-        records.push(Record {
-            raf, af, info_val, atomic_ids,
-        });
+        records.push(Record { atomic_ids });
 
         let fmt: Vec<&str> = fields[8].split(':').collect();
         let gt_idx = fmt.iter().position(|&x| x == "GT");
@@ -198,26 +196,17 @@ fn process_group(
         let var_data = &id_buffer[&assigned_id];
         let coord = var_data.0;
 
-        let t_rec = records.iter().find(|r| r.atomic_ids.contains(&assigned_id)).unwrap();
-
         let mut new_info = vec![format!("ID={}", assigned_id)];
-        if let Some(v) = &t_rec.raf { new_info.push(format!("RAF={}", v)); }
-        if let Some(v) = &t_rec.af { new_info.push(format!("AF={}", v)); }
-        if let Some(v) = &t_rec.info_val { new_info.push(format!("INFO={}", v)); }
-
-        let mut vcf_line = vec![
-            chrom.clone(),
-            coord.to_string(),
-            var_data.1.clone(),
-            var_data.2.clone(),
-            var_data.3.clone(),
-            ".".to_string(),
-            ".".to_string(),
-            new_info.join(";"),
-            "GT:DS:GP".to_string(),
-        ];
+        if !var_data.4.is_empty() {
+            new_info.push(format!("RAF={}", var_data.4));
+        }
 
         let dists = atomic_sample_dists.get(&assigned_id).unwrap_or(&empty_dists);
+
+        let mut ds_sum = 0.0_f32;
+        let mut ds2_sum = 0.0_f32;
+        let mut ds4_sum = 0.0_f32;
+        let mut sample_strings = Vec::with_capacity(num_samples);
 
         for s in 0..num_samples {
             let dist = &dists[s];
@@ -245,15 +234,54 @@ fn process_group(
                 else { v2 += diff; }
             }
 
+            let gp1_q = v1 as f32 / 1000.0;
+            let gp2_q = v2 as f32 / 1000.0;
+            let ds_q = gp1_q + 2.0 * gp2_q;
+            
+            ds_sum += ds_q;
+            ds2_sum += ds_q * ds_q;
+            ds4_sum += gp1_q + 4.0 * gp2_q;
+
             let gp_str = format!("{},{},{}",
                 format_float(v0 as f32 / 1000.0),
-                format_float(v1 as f32 / 1000.0),
-                format_float(v2 as f32 / 1000.0)
+                format_float(gp1_q),
+                format_float(gp2_q)
             );
 
-            vcf_line.push(format!("{}:{}:{}", gt, ds_str, gp_str));
+            sample_strings.push(format!("{}:{}:{}", gt, ds_str, gp_str));
         }
 
+        let n_tar_haps = 2.0 * num_samples as f32;
+        let safe_n = n_tar_haps.max(1e-9);
+        let af = ds_sum / safe_n;
+        let denom = n_tar_haps * af * (1.0 - af);
+        
+        let mut recalc_info = 1.0_f32;
+        if af > 0.0 && af < 1.0 && denom > 0.0 {
+            recalc_info = 1.0 - (ds4_sum - ds2_sum) / denom;
+        }
+        recalc_info = recalc_info.max(0.0);
+        let recalc_info_rounded = (recalc_info * 1000.0).round() / 1000.0;
+
+        new_info.push(format!("AF={}", format_float(af)));
+        new_info.push(format!("INFO={}", format_float(recalc_info_rounded)));
+        if has_max_bubble {
+            new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_bubble_info)));
+        }
+
+        let mut vcf_line = vec![
+            chrom.clone(),
+            coord.to_string(),
+            var_data.1.clone(),
+            var_data.2.clone(),
+            var_data.3.clone(),
+            ".".to_string(),
+            ".".to_string(),
+            new_info.join(";"),
+            "GT:DS:GP".to_string(),
+        ];
+        
+        vcf_line.extend(sample_strings);
         writeln!(out_handle, "{}", vcf_line.join("\t")).unwrap();
     }
 }
@@ -299,17 +327,33 @@ fn main() {
     let mut group: Vec<(String, String)> = Vec::new();
     let mut records_processed: usize = 0;
 
-    let mut id_buffer: HashMap<String, (u32, String, String, String)> = HashMap::new();
+    let mut id_buffer: HashMap<String, (u32, String, String, String, String)> = HashMap::new();
     let mut active_id_chrom = String::new();
 
     let start_time = Instant::now();
     eprintln!("Starting Phased Joint-Distribution projection (Max Alleles: {}, Window Size: {})...", max_alleles, window_size);
 
+    let mut seen_raf = false;
+    let mut seen_af = false;
+    let mut seen_info = false;
+    let mut seen_max_bubble = false;
+
     for line_result in stdin.lock().lines() {
         let line = line_result.unwrap();
 
         if line.starts_with('#') {
-            if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
+            if line.starts_with("##INFO=<ID=RAF,") { seen_raf = true; }
+            if line.starts_with("##INFO=<ID=AF,") { seen_af = true; }
+            if line.starts_with("##INFO=<ID=INFO,") { seen_info = true; }
+            if line.starts_with("##INFO=<ID=INFO_MAX_BUBBLE,") { seen_max_bubble = true; }
+
+            if line.starts_with("#CHROM") {
+                if !seen_raf { writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"Panel reference allele frequency\">").unwrap(); }
+                if !seen_af { writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Recalculated allele frequency\">").unwrap(); }
+                if !seen_info { writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"Recalculated IMPUTE INFO score\">").unwrap(); }
+                if !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble\">").unwrap(); }
+                writeln!(out_handle, "{}", line).unwrap();
+            } else if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
                 writeln!(out_handle, "{}", line).unwrap();
             }
             continue;
@@ -407,11 +451,34 @@ fn main() {
                 let orig_id = pop_fields[2].to_string();
                 let ref_seq = pop_fields[3].to_string();
                 let alt_seq = pop_fields[4].to_string();
+                
+                let mut id_val = String::new();
+                let mut af_val = String::new();
+                let mut ac_val = String::new();
+                let mut an_val = String::new();
+                
                 for item in pop_fields[7].split(';') {
-                    if let Some(id_val) = item.strip_prefix("ID=") {
-                        id_buffer.insert(id_val.to_string(), (peek_pos, orig_id, ref_seq, alt_seq));
-                        break;
+                    if let Some(v) = item.strip_prefix("ID=") {
+                        id_val = v.to_string();
+                    } else if let Some(v) = item.strip_prefix("AF=") {
+                        af_val = v.to_string();
+                    } else if let Some(v) = item.strip_prefix("AC=") {
+                        ac_val = v.to_string();
+                    } else if let Some(v) = item.strip_prefix("AN=") {
+                        an_val = v.to_string();
                     }
+                }
+                
+                if af_val.is_empty() && !ac_val.is_empty() && !an_val.is_empty() {
+                    if let (Ok(ac), Ok(an)) = (ac_val.parse::<f32>(), an_val.parse::<f32>()) {
+                        if an > 0.0 {
+                            af_val = format_float(ac / an);
+                        }
+                    }
+                }
+                
+                if !id_val.is_empty() {
+                    id_buffer.insert(id_val, (peek_pos, orig_id, ref_seq, alt_seq, af_val));
                 }
             }
         }
