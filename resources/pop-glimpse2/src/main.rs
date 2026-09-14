@@ -42,6 +42,7 @@ fn process_group(
     group_lines: &[(String, String)],
     id_buffer: &HashMap<String, (u32, String, String, String, String)>,
     max_alleles: usize,
+    emit_max_bubble: bool,
     out_handle: &mut impl Write,
 ) {
     if group_lines.is_empty() { return; }
@@ -264,14 +265,16 @@ fn process_group(
         new_info.push(format!("AF={}", format_float(af)));
         new_info.push(format!("INFO={}", format_float(recalc_info_rounded)));
         
-        let mut max_info = -1.0_f32;
-        for rec in &records {
-            if rec.atomic_ids.contains(&assigned_id) {
-                max_info = max_info.max(rec.path_info);
+        if emit_max_bubble {
+            let mut max_info = -1.0_f32;
+            for rec in &records {
+                if rec.atomic_ids.contains(&assigned_id) {
+                    max_info = max_info.max(rec.path_info);
+                }
             }
-        }
-        if max_info >= 0.0 {
-            new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_info)));
+            if max_info >= 0.0 {
+                new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_info)));
+            }
         }
 
         let mut vcf_line = vec![
@@ -292,9 +295,14 @@ fn process_group(
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
+    
+    // Parse and remove the optional flag so it doesn't break positional parsing
+    let emit_max_bubble = args.contains(&"--emit-max-bubble".to_string());
+    args.retain(|arg| arg != "--emit-max-bubble");
+
     if args.len() < 3 {
-        eprintln!("Usage: cat <multiallelic VCF> | {} <biallelic ID VCF> <sites VCF> [max_alleles] [window_size]", args[0]);
+        eprintln!("Usage: cat <multiallelic VCF> | {} <biallelic ID VCF> <sites VCF> [max_alleles] [window_size] [--emit-max-bubble]", args[0]);
         std::process::exit(1);
     }
 
@@ -356,7 +364,7 @@ fn main() {
                 if !seen_raf { writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"Panel reference allele frequency\">").unwrap(); }
                 if !seen_af { writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Recalculated allele frequency\">").unwrap(); }
                 if !seen_info { writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"Recalculated IMPUTE INFO score\">").unwrap(); }
-                if !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble for paths containing the variant\">").unwrap(); }
+                if emit_max_bubble && !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble for paths containing the variant\">").unwrap(); }
                 writeln!(out_handle, "{}", line).unwrap();
             } else if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
                 writeln!(out_handle, "{}", line).unwrap();
@@ -409,7 +417,7 @@ fn main() {
         }
 
         if pos != *current_pos.as_ref().unwrap() || chrom != current_chrom {
-            process_group(&group, &id_buffer, max_alleles, &mut out_handle);
+            process_group(&group, &id_buffer, max_alleles, emit_max_bubble, &mut out_handle);
             group.clear();
             current_pos = Some(pos.clone());
             current_chrom = chrom.clone();
@@ -492,7 +500,7 @@ fn main() {
     }
 
     if !group.is_empty() {
-        process_group(&group, &id_buffer, max_alleles, &mut out_handle);
+        process_group(&group, &id_buffer, max_alleles, emit_max_bubble, &mut out_handle);
     }
 
     out_handle.flush().unwrap();

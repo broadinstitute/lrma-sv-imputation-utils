@@ -62,7 +62,7 @@ def format_float(val):
 # min_slack is the smallest distance to any rounding / threshold boundary
 # encountered (used only by the generator's rejection loop).
 # --------------------------------------------------------------------------- #
-def process_group(group, id_buffer, max_alleles):
+def process_group(group, id_buffer, max_alleles, emit_max_bubble=False):
     """group: list of dicts, each an allele line:
          {info: {RAF,AF,INFO}, atomic_ids: [..], samples: [(gt_str, gp_triple)]}
        id_buffer: key -> (pos, orig_id, ref, alt, ac, an)
@@ -212,9 +212,10 @@ def process_group(group, id_buffer, max_alleles):
         info.append("AF=%s" % format_float(af))
         info.append("INFO=%s" % format_float(recalc_info_rounded))
         
-        max_info = atomic_max_info.get(aid, -1.0)
-        if max_info >= 0.0:
-            info.append("INFO_MAX_BUBBLE=%s" % format_float(max_info))
+        if emit_max_bubble:
+            max_info = atomic_max_info.get(aid, -1.0)
+            if max_info >= 0.0:
+                info.append("INFO_MAX_BUBBLE=%s" % format_float(max_info))
 
         cols[7] = ";".join(info)
         cols.extend(sample_strings)
@@ -301,7 +302,7 @@ def generate(seed=20240717):
         ok = True
         for max_alleles in MAX_ALLELES_CASES:
             for g in groups:
-                _, slack = process_group(g, ID_BUFFER, max_alleles)
+                _, slack = process_group(g, ID_BUFFER, max_alleles, False)
                 if slack < MARGIN:
                     ok = False
                     break
@@ -384,15 +385,15 @@ def write_ids(path):
                                "ID=%s;AC=%d;AN=%d" % (key, ac, an)]) + "\n")
 
 
-def expected_body(groups, max_alleles):
+def expected_body(groups, max_alleles, emit_max_bubble):
     out = []
     for g in groups:
-        lines, _ = process_group(g, ID_BUFFER, max_alleles)
+        lines, _ = process_group(g, ID_BUFFER, max_alleles, emit_max_bubble)
         out.extend(lines)
     return out
 
 
-def write_expected(path, groups, max_alleles):
+def write_expected(path, groups, max_alleles, emit_max_bubble=False):
     with open(path, "w") as f:
         # tool passes through main header lines except the dropped tokens
         for h in MAIN_HEADER:
@@ -401,9 +402,10 @@ def write_expected(path, groups, max_alleles):
                     f.write('##INFO=<ID=RAF,Number=A,Type=Float,Description="Panel reference allele frequency">\n')
                     f.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Recalculated allele frequency">\n')
                     f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="Recalculated IMPUTE INFO score">\n')
-                    f.write('##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble for paths containing the variant">\n')
+                    if emit_max_bubble:
+                        f.write('##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble for paths containing the variant">\n')
                 f.write(h + "\n")
-        for line in expected_body(groups, max_alleles):
+        for line in expected_body(groups, max_alleles, emit_max_bubble):
             f.write(line + "\n")
 
 
@@ -419,8 +421,9 @@ def main():
     write_sites(os.path.join(here, "sites.vcf"), groups)
     write_ids(os.path.join(here, "ids.vcf"))
 
-    write_expected(os.path.join(exp, "max10.txt"), groups, 10)
-    write_expected(os.path.join(exp, "max2.txt"), groups, 2)
+    write_expected(os.path.join(exp, "max10.txt"), groups, 10, False)
+    write_expected(os.path.join(exp, "max10_maxbubble.txt"), groups, 10, True)
+    write_expected(os.path.join(exp, "max2_maxbubble.txt"), groups, 2, True)
 
     print("pop-glimpse2 fixtures + expected written "
           "(seed-stable, margin>=%.3f from all boundaries)" % MARGIN)
