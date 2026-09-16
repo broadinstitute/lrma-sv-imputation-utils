@@ -11,6 +11,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 struct Record {
     atomic_ids: Vec<String>,
     path_info: f32,
+    path_raf: f32,
 }
 
 #[derive(Clone)]
@@ -28,6 +29,7 @@ fn smart_open(filename: &str) -> Box<dyn BufRead> {
     }
 }
 
+// Retained for once-per-variant metadata (AF, INFO) where allocation doesn't matter
 fn format_float(val: f32) -> String {
     let s = format!("{:.3}", val);
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -36,6 +38,31 @@ fn format_float(val: f32) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+// Zero-allocation f32 formatter for the Dosage (DS) field
+fn write_float_trim(w: &mut impl Write, val: f32) -> io::Result<()> {
+    let mut buf = [0u8; 32];
+    let mut cursor = std::io::Cursor::new(&mut buf[..]);
+    write!(&mut cursor, "{:.3}", val)?;
+    let len = cursor.position() as usize;
+    let mut s = &buf[..len];
+    while s.ends_with(b"0") { s = &s[..s.len()-1]; }
+    if s.ends_with(b".") { s = &s[..s.len()-1]; }
+    if s.is_empty() {
+        w.write_all(b"0")
+    } else {
+        w.write_all(s)
+    }
+}
+
+// Zero-allocation per-mille formatter for Genotype Probabilities (GP)
+fn write_permille(w: &mut impl Write, v: i32) -> io::Result<()> {
+    if v == 0 { w.write_all(b"0") }
+    else if v == 1000 { w.write_all(b"1") }
+    else if v % 100 == 0 { write!(w, "0.{}", v / 100) }
+    else if v % 10 == 0 { write!(w, "0.{:02}", v / 10) }
+    else { write!(w, "0.{:03}", v) }
 }
 
 fn process_group(
@@ -48,7 +75,7 @@ fn process_group(
 
     let first_line_fields: Vec<&str> = group_lines[0].0.trim_end().split('\t').collect();
     if first_line_fields.len() <= 9 {
-        panic!("Error: VCF does not contain sample columns. This script requires sample Genotype (GT) and Probability (GP) columns to project joint distributions.");
+        panic!("Error: VCF does not contain sample columns.");
     }
     let num_samples = first_line_fields.len() - 9;
     let chrom = first_line_fields[0].to_string();
@@ -62,14 +89,18 @@ fn process_group(
     for (a, (line, site_info)) in group_lines.iter().enumerate() {
         let fields: Vec<&str> = line.trim_end().split('\t').collect();
 
-        let mut path_info = -1.0_f32;
+        // 1. Strictly enforce INFO and RAF metadata
+        let mut path_info: Option<f32> = None;
+        let mut path_raf: Option<f32> = None;
         for item in fields[7].split(';') {
             if let Some(v) = item.strip_prefix("INFO=") {
-                if let Ok(f) = v.parse::<f32>() {
-                    path_info = f;
-                }
+                path_info = Some(v.parse::<f32>().expect("Error: INFO is not a valid float"));
+            } else if let Some(v) = item.strip_prefix("RAF=") {
+                path_raf = Some(v.parse::<f32>().expect("Error: RAF is not a valid float"));
             }
         }
+        let path_info = path_info.expect("Error: Missing INFO field in GLIMPSE2 output");
+        let path_raf = path_raf.expect("Error: Missing RAF field in GLIMPSE2 output");
 
         let mut atomic_ids = Vec::new();
         for item in site_info.split(';') {
@@ -87,35 +118,35 @@ fn process_group(
             }
         }
 
-        records.push(Record { atomic_ids, path_info });
+        records.push(Record { atomic_ids, path_info, path_raf });
 
+        // 2. Strictly enforce FORMAT header
         let fmt: Vec<&str> = fields[8].split(':').collect();
-        let gt_idx = fmt.iter().position(|&x| x == "GT");
-        let gp_idx = fmt.iter().position(|&x| x == "GP");
+        let gt_idx = fmt.iter().position(|&x| x == "GT").expect("Error: Missing GT in FORMAT string");
+        let gp_idx = fmt.iter().position(|&x| x == "GP").expect("Error: Missing GP in FORMAT string");
 
         for s in 0..num_samples {
             let sample_data = fields[9 + s];
-            let mut gt_val = "0|0";
-            let mut gp1 = 0.0;
-            let mut gp2 = 0.0;
-
-            if sample_data != "." {
-                let mut split_iter = sample_data.split(':');
-                let mut current_idx = 0;
-                while let Some(val) = split_iter.next() {
-                    if Some(current_idx) == gt_idx {
-                        if val != "." { gt_val = val; }
-                    } else if Some(current_idx) == gp_idx {
-                        if val != "." {
-                            let mut gp_iter = val.split(',');
-                            let _gp0 = gp_iter.next();
-                            if let Some(v1) = gp_iter.next() { gp1 = v1.parse::<f32>().unwrap_or(0.0); }
-                            if let Some(v2) = gp_iter.next() { gp2 = v2.parse::<f32>().unwrap_or(0.0); }
-                        }
-                    }
-                    current_idx += 1;
-                }
+            if sample_data == "." {
+                panic!("Error: GLIMPSE2 output missing sample data ('.')");
             }
+            
+            // Allocation-free indexing of the sample format tokens
+            let mut gt_val = "";
+            let mut gp_str = "";
+            for (i, val) in sample_data.split(':').enumerate() {
+                if i == gt_idx { gt_val = val; }
+                else if i == gp_idx { gp_str = val; }
+            }
+            
+            if gt_val == "" || gt_val == "." || gp_str == "" || gp_str == "." {
+                panic!("Error: Missing GT or GP value for sample");
+            }
+
+            let mut gp_iter = gp_str.split(',');
+            let _gp0 = gp_iter.next().expect("Error: Malformed GP (missing gp0)");
+            let gp1 = gp_iter.next().expect("Error: Malformed GP (missing gp1)").parse::<f32>().expect("Error: GP1 is not a valid float");
+            let gp2 = gp_iter.next().expect("Error: Malformed GP (missing gp2)").parse::<f32>().expect("Error: GP2 is not a valid float");
 
             let (p0, p1) = if gt_val.starts_with("1|0") {
                 (gp2 + gp1, gp2)
@@ -200,20 +231,59 @@ fn process_group(
         }
 
         let dists = atomic_sample_dists.get(&assigned_id).unwrap_or(&empty_dists);
-
         let mut ds_sum = 0.0_f32;
-        let mut sample_strings = Vec::with_capacity(num_samples);
+        
+        for s in 0..num_samples {
+            let dist = &dists[s];
+            let p0 = dist.p0.clamp(0.0, 1.0);
+            let p1 = dist.p1.clamp(0.0, 1.0);
+
+            let gp1_raw = p0 * (1.0 - p1) + (1.0 - p0) * p1;
+            let gp2_raw = p0 * p1;
+
+            let gp1_q = (gp1_raw * 1000.0).round() as i32 as f32 / 1000.0;
+            let gp2_q = (gp2_raw * 1000.0).round() as i32 as f32 / 1000.0;
+            ds_sum += gp1_q + 2.0 * gp2_q;
+        }
+
+        let n_tar_haps = 2.0 * num_samples as f32;
+        let safe_n = n_tar_haps.max(1e-9);
+        let af = ds_sum / safe_n;
+        new_info.push(format!("AF={}", format_float(af)));
+        
+        // 3. Simplified INFO calculation with guaranteed data
+        let mut info_num = 0.0_f32;
+        let mut info_den = 0.0_f32;
+        let mut sum_info = 0.0_f32;
+        let mut count = 0.0_f32;
+        
+        for rec in &records {
+            if rec.atomic_ids.contains(&assigned_id) {
+                info_num += rec.path_info * rec.path_raf;
+                info_den += rec.path_raf;
+                sum_info += rec.path_info;
+                count += 1.0;
+            }
+        }
+        
+        if info_den > 0.0 {
+            new_info.push(format!("INFO={}", format_float(info_num / info_den)));
+        } else {
+            // Safe unweighted fallback if all RAFs are exactly 0.0
+            new_info.push(format!("INFO={}", format_float(sum_info / count.max(1.0))));
+        }
+
+        write!(out_handle, "{}\t{}\t{}\t{}\t{}\t.\t.\t{}\tGT:DS:GP",
+            chrom, coord, var_data.1, var_data.2, var_data.3, new_info.join(";")
+        ).unwrap();
 
         for s in 0..num_samples {
             let dist = &dists[s];
             let p0 = dist.p0.clamp(0.0, 1.0);
             let p1 = dist.p1.clamp(0.0, 1.0);
 
-            let hap0_gt = if p0 > 0.5 { "1" } else { "0" };
-            let hap1_gt = if p1 > 0.5 { "1" } else { "0" };
-            let gt = format!("{}|{}", hap0_gt, hap1_gt);
-
-            let ds_str = format_float(p0 + p1);
+            let hap0_gt = if p0 > 0.5 { '1' } else { '0' };
+            let hap1_gt = if p1 > 0.5 { '1' } else { '0' };
 
             let gp0_raw = (1.0 - p0) * (1.0 - p1);
             let gp1_raw = p0 * (1.0 - p1) + (1.0 - p0) * p1;
@@ -230,51 +300,16 @@ fn process_group(
                 else { v2 += diff; }
             }
 
-            let gp1_q = v1 as f32 / 1000.0;
-            let gp2_q = v2 as f32 / 1000.0;
-            let ds_q = gp1_q + 2.0 * gp2_q;
-            
-            ds_sum += ds_q;
-
-            let gp_str = format!("{},{},{}",
-                format_float(v0 as f32 / 1000.0),
-                format_float(gp1_q),
-                format_float(gp2_q)
-            );
-
-            sample_strings.push(format!("{}:{}:{}", gt, ds_str, gp_str));
+            write!(out_handle, "\t{}|{}:", hap0_gt, hap1_gt).unwrap();
+            write_float_trim(out_handle, p0 + p1).unwrap();
+            write!(out_handle, ":").unwrap();
+            write_permille(out_handle, v0).unwrap();
+            write!(out_handle, ",").unwrap();
+            write_permille(out_handle, v1).unwrap();
+            write!(out_handle, ",").unwrap();
+            write_permille(out_handle, v2).unwrap();
         }
-
-        let n_tar_haps = 2.0 * num_samples as f32;
-        let safe_n = n_tar_haps.max(1e-9);
-        let af = ds_sum / safe_n;
-
-        new_info.push(format!("AF={}", format_float(af)));
-        
-        let mut max_info = -1.0_f32;
-        for rec in &records {
-            if rec.atomic_ids.contains(&assigned_id) {
-                max_info = max_info.max(rec.path_info);
-            }
-        }
-        if max_info >= 0.0 {
-            new_info.push(format!("INFO={}", format_float(max_info)));
-        }
-
-        let mut vcf_line = vec![
-            chrom.clone(),
-            coord.to_string(),
-            var_data.1.clone(),
-            var_data.2.clone(),
-            var_data.3.clone(),
-            ".".to_string(),
-            ".".to_string(),
-            new_info.join(";"),
-            "GT:DS:GP".to_string(),
-        ];
-        
-        vcf_line.extend(sample_strings);
-        writeln!(out_handle, "{}", vcf_line.join("\t")).unwrap();
+        writeln!(out_handle).unwrap();
     }
 }
 
@@ -326,22 +361,20 @@ fn main() {
     let start_time = Instant::now();
     eprintln!("Starting Phased Joint-Distribution projection (Max Alleles: {}, Window Size: {})...", max_alleles, window_size);
 
-    let mut seen_raf = false;
-    let mut seen_af = false;
-    let mut seen_info = false;
-
     for line_result in stdin.lock().lines() {
         let line = line_result.unwrap();
 
         if line.starts_with('#') {
-            if line.starts_with("##INFO=<ID=RAF,") { seen_raf = true; }
-            if line.starts_with("##INFO=<ID=AF,") { seen_af = true; }
-            if line.starts_with("##INFO=<ID=INFO,") { seen_info = true; }
+            if line.starts_with("##INFO=<ID=RAF,") || 
+               line.starts_with("##INFO=<ID=AF,") || 
+               line.starts_with("##INFO=<ID=INFO,") {
+                continue; 
+            }
 
             if line.starts_with("#CHROM") {
-                if !seen_raf { writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"ALT allele frequency in the reference panel\">").unwrap(); }
-                if !seen_af { writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"ALT allele frequency computed from rounded GLIMPSE2 output DS/GP field across target samples\">").unwrap(); }
-                if !seen_info { writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble for paths containing the variant\">").unwrap(); }
+                writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"ALT allele frequency in the reference panel\">").unwrap();
+                writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"ALT allele frequency computed from rounded GLIMPSE2 output DS/GP field across target samples\">").unwrap();
+                writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"RAF-weighted average INFO score across the parent bubble for paths containing the variant\">").unwrap();
                 writeln!(out_handle, "{}", line).unwrap();
             } else if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
                 writeln!(out_handle, "{}", line).unwrap();

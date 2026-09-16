@@ -76,19 +76,19 @@ def process_group(group, id_buffer, max_alleles):
     seen = set()
     hap_probs = [[(0.0, 0.0)] * num_alleles for _ in range(num_samples)]
     
-    atomic_max_info = {}
+    # Store tuples of (info, raf) for each path
+    path_metrics = []
 
     for a, rec in enumerate(group):
-        path_info = rec["info"].get("INFO")
-        path_info_val = float(path_info) if path_info is not None else -1.0
+        # Strict enforcement of GLIMPSE2 assumptions
+        path_info_val = float(rec["info"]["INFO"]) 
+        path_raf_val = float(rec["info"]["RAF"])   
+        path_metrics.append((path_info_val, path_raf_val))
         
         for aid in rec["atomic_ids"]:
             if aid not in seen:
                 seen.add(aid)
                 all_atomic.append(aid)
-            
-            if path_info_val >= 0.0:
-                atomic_max_info[aid] = max(atomic_max_info.get(aid, -1.0), path_info_val)
                 
         for s in range(num_samples):
             gt_val, (g0, g1, g2) = rec["samples"][s]
@@ -200,9 +200,24 @@ def process_group(group, id_buffer, max_alleles):
 
         info.append("AF=%s" % format_float(af))
         
-        max_info = atomic_max_info.get(aid, -1.0)
-        if max_info >= 0.0:
-            info.append("INFO=%s" % format_float(max_info))
+        # Simplified RAF-weighted INFO calculation
+        info_num = 0.0
+        info_den = 0.0
+        sum_info = 0.0
+        count = 0.0
+        
+        for a, rec in enumerate(group):
+            if aid in rec["atomic_ids"]:
+                p_info, p_raf = path_metrics[a]
+                info_num += p_info * p_raf
+                info_den += p_raf
+                sum_info += p_info
+                count += 1.0
+                    
+        if info_den > 0.0:
+            info.append("INFO=%s" % format_float(f32(info_num / info_den)))
+        else:
+            info.append("INFO=%s" % format_float(f32(sum_info / max(count, 1.0))))
 
         cols[7] = ";".join(info)
         cols.extend(sample_strings)
@@ -233,18 +248,17 @@ ID_BUFFER = {
     "v5": (2000, "rs5", "G", "C", 500, 1000),
 }
 
-# One bubble at chr1:1000 (3 alt lines) and one at chr1:2000 (3 alt lines).
-# Each entry: (chrom, pos, ref, alt, atomic_ids, has_raf, has_af, has_info)
+# Guaranteed well-formed GLIMPSE2 bubble outputs
 BUBBLES = [
     ("chr1", 1000, [
-        ("A", "G", ["v1"],       True,  True,  True),
-        ("A", "T", ["v1", "v2"], True,  False, True),   # shares v1 -> accumulation
-        ("A", "C", ["v3"],       False, True,  False),
+        ("A", "G", ["v1"]),
+        ("A", "T", ["v1", "v2"]),   
+        ("A", "C", ["v3"]),       
     ]),
     ("chr1", 2000, [
-        ("G", "A", ["v4"],       True,  True,  False),
-        ("G", "C", ["v5"],       True,  True,  True),
-        ("G", "T", ["v4", "v5"], False, False, True),   # shares both
+        ("G", "A", ["v4"]),       
+        ("G", "C", ["v5"]),       
+        ("G", "T", ["v4", "v5"]),   
     ]),
 ]
 
@@ -262,16 +276,17 @@ def sample_gp(rng):
 def build_group(bubble, rng):
     chrom, pos, alts = bubble
     group = []
-    for (ref, alt, aids, hr, ha, hi) in alts:
+    for (ref, alt, aids) in alts:
         samples = []
         for _ in range(NUM_SAMPLES):
             gt = rng.choice(GT_CHOICES)
             gp = sample_gp(rng)
             samples.append((gt, (float(gp[0]), float(gp[1]), float(gp[2]))))
-        info = {}
-        info["RAF"] = ("%.4f" % rng.uniform(0.01, 0.99)) if hr else None
-        info["AF"] = ("%.4f" % rng.uniform(0.01, 0.99)) if ha else None
-        info["INFO"] = ("%.3f" % rng.uniform(0.1, 0.99)) if hi else None
+        info = {
+            "RAF": "%.4f" % rng.uniform(0.01, 0.99),
+            "AF": "%.4f" % rng.uniform(0.01, 0.99),
+            "INFO": "%.3f" % rng.uniform(0.1, 0.99)
+        }
         group.append({
             "chrom": chrom, "pos": pos, "ref": ref, "alt": alt,
             "atomic_ids": aids, "info": info, "samples": samples,
@@ -306,10 +321,14 @@ CONTIG = "##contig=<ID=chr1,length=100000>"
 SAMPLE_NAMES = ["S%d" % (i + 1) for i in range(NUM_SAMPLES)]
 
 # Header lines placed in the MAIN vcf: the AK/GL/KC ones must be dropped by the
-# tool, the rest passed through verbatim.
+# tool, the rest passed through verbatim. The mock incoming definitions test
+# the tool's drop-and-replace logic for RAF, AF, and INFO.
 MAIN_HEADER = [
     "##fileformat=VCFv4.2",
     CONTIG,
+    '##INFO=<ID=RAF,Number=A,Type=Float,Description="Fake incoming RAF">',
+    '##INFO=<ID=AF,Number=A,Type=Float,Description="Fake incoming AF">',
+    '##INFO=<ID=INFO,Number=A,Type=Float,Description="Fake incoming INFO">',
     '##INFO=<ID=AK,Number=1,Type=String,Description="dropped by tool">',
     '##FORMAT=<ID=GL,Number=G,Type=Float,Description="dropped by tool">',
     '##FORMAT=<ID=KC,Number=1,Type=Integer,Description="dropped by tool">',
@@ -382,13 +401,14 @@ def expected_body(groups, max_alleles):
 
 def write_expected(path, groups, max_alleles):
     with open(path, "w") as f:
-        # tool passes through main header lines except the dropped tokens
         for h in MAIN_HEADER:
+            if h.startswith("##INFO=<ID=RAF,") or h.startswith("##INFO=<ID=AF,") or h.startswith("##INFO=<ID=INFO,"):
+                continue
             if not any(tok in h for tok in DROP_TOKENS):
                 if h.startswith("#CHROM"):
                     f.write('##INFO=<ID=RAF,Number=A,Type=Float,Description="ALT allele frequency in the reference panel">\n')
                     f.write('##INFO=<ID=AF,Number=A,Type=Float,Description="ALT allele frequency computed from rounded GLIMPSE2 output DS/GP field across target samples">\n')
-                    f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble for paths containing the variant">\n')
+                    f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="RAF-weighted average INFO score across the parent bubble for paths containing the variant">\n')
                 f.write(h + "\n")
         for line in expected_body(groups, max_alleles):
             f.write(line + "\n")
