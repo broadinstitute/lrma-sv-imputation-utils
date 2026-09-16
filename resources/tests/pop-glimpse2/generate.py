@@ -62,7 +62,7 @@ def format_float(val):
 # min_slack is the smallest distance to any rounding / threshold boundary
 # encountered (used only by the generator's rejection loop).
 # --------------------------------------------------------------------------- #
-def process_group(group, id_buffer, max_alleles):
+def process_group(group, id_buffer, max_alleles, emit_max_bubble=False):
     """group: list of dicts, each an allele line:
          {info: {RAF,AF,INFO}, atomic_ids: [..], samples: [(gt_str, gp_triple)]}
        id_buffer: key -> (pos, orig_id, ref, alt, ac, an)
@@ -76,19 +76,19 @@ def process_group(group, id_buffer, max_alleles):
     seen = set()
     hap_probs = [[(0.0, 0.0)] * num_alleles for _ in range(num_samples)]
     
-    # Store tuples of (info, raf) for each path
-    path_metrics = []
+    atomic_max_info = {}
 
     for a, rec in enumerate(group):
-        # Strict enforcement of GLIMPSE2 assumptions
-        path_info_val = float(rec["info"]["INFO"]) 
-        path_raf_val = float(rec["info"]["RAF"])   
-        path_metrics.append((path_info_val, path_raf_val))
+        path_info = rec["info"].get("INFO")
+        path_info_val = float(path_info) if path_info is not None else -1.0
         
         for aid in rec["atomic_ids"]:
             if aid not in seen:
                 seen.add(aid)
                 all_atomic.append(aid)
+            
+            if path_info_val >= 0.0:
+                atomic_max_info[aid] = max(atomic_max_info.get(aid, -1.0), path_info_val)
                 
         for s in range(num_samples):
             gt_val, (g0, g1, g2) = rec["samples"][s]
@@ -152,6 +152,8 @@ def process_group(group, id_buffer, max_alleles):
         cols = [chrom, str(pos), orig_id, ref, alt, ".", ".", "INFO_PH", "GT:DS:GP"]
         
         ds_sum = 0.0
+        ds2_sum = 0.0
+        ds4_sum = 0.0
         sample_strings = []
 
         for s in range(num_samples):
@@ -188,6 +190,8 @@ def process_group(group, id_buffer, max_alleles):
             gp2_q = f32(v2 / 1000.0)
             ds_q = f32(gp1_q + f32(2.0 * gp2_q))
             ds_sum = f32(ds_sum + ds_q)
+            ds2_sum = f32(ds2_sum + f32(ds_q * ds_q))
+            ds4_sum = f32(ds4_sum + f32(gp1_q + f32(4.0 * gp2_q)))
             
             gp = "%s,%s,%s" % (format_float(f32(v0 / 1000.0)),
                                format_float(gp1_q),
@@ -197,27 +201,21 @@ def process_group(group, id_buffer, max_alleles):
         n_tar_haps = f32(2.0 * num_samples)
         safe_n = max(n_tar_haps, f32(1e-9))
         af = f32(ds_sum / safe_n)
+        denom = f32(n_tar_haps * f32(af * f32(F32_1 - af)))
+
+        recalc_info = F32_1
+        if af > 0.0 and af < 1.0 and denom > 0.0:
+            recalc_info = f32(F32_1 - f32(f32(ds4_sum - ds2_sum) / denom))
+        recalc_info = max(recalc_info, 0.0)
+        recalc_info_rounded = f32(rha(f32(recalc_info * 1000.0)) / 1000.0)
 
         info.append("AF=%s" % format_float(af))
+        info.append("INFO=%s" % format_float(recalc_info_rounded))
         
-        # Simplified RAF-weighted INFO calculation
-        info_num = 0.0
-        info_den = 0.0
-        sum_info = 0.0
-        count = 0.0
-        
-        for a, rec in enumerate(group):
-            if aid in rec["atomic_ids"]:
-                p_info, p_raf = path_metrics[a]
-                info_num += p_info * p_raf
-                info_den += p_raf
-                sum_info += p_info
-                count += 1.0
-                    
-        if info_den > 0.0:
-            info.append("INFO=%s" % format_float(f32(info_num / info_den)))
-        else:
-            info.append("INFO=%s" % format_float(f32(sum_info / max(count, 1.0))))
+        if emit_max_bubble:
+            max_info = atomic_max_info.get(aid, -1.0)
+            if max_info >= 0.0:
+                info.append("INFO_MAX_BUBBLE=%s" % format_float(max_info))
 
         cols[7] = ";".join(info)
         cols.extend(sample_strings)
@@ -248,17 +246,18 @@ ID_BUFFER = {
     "v5": (2000, "rs5", "G", "C", 500, 1000),
 }
 
-# Guaranteed well-formed GLIMPSE2 bubble outputs
+# One bubble at chr1:1000 (3 alt lines) and one at chr1:2000 (3 alt lines).
+# Each entry: (chrom, pos, ref, alt, atomic_ids, has_raf, has_af, has_info)
 BUBBLES = [
     ("chr1", 1000, [
-        ("A", "G", ["v1"]),
-        ("A", "T", ["v1", "v2"]),   
-        ("A", "C", ["v3"]),       
+        ("A", "G", ["v1"],       True,  True,  True),
+        ("A", "T", ["v1", "v2"], True,  False, True),   # shares v1 -> accumulation
+        ("A", "C", ["v3"],       False, True,  False),
     ]),
     ("chr1", 2000, [
-        ("G", "A", ["v4"]),       
-        ("G", "C", ["v5"]),       
-        ("G", "T", ["v4", "v5"]),   
+        ("G", "A", ["v4"],       True,  True,  False),
+        ("G", "C", ["v5"],       True,  True,  True),
+        ("G", "T", ["v4", "v5"], False, False, True),   # shares both
     ]),
 ]
 
@@ -276,17 +275,16 @@ def sample_gp(rng):
 def build_group(bubble, rng):
     chrom, pos, alts = bubble
     group = []
-    for (ref, alt, aids) in alts:
+    for (ref, alt, aids, hr, ha, hi) in alts:
         samples = []
         for _ in range(NUM_SAMPLES):
             gt = rng.choice(GT_CHOICES)
             gp = sample_gp(rng)
             samples.append((gt, (float(gp[0]), float(gp[1]), float(gp[2]))))
-        info = {
-            "RAF": "%.4f" % rng.uniform(0.01, 0.99),
-            "AF": "%.4f" % rng.uniform(0.01, 0.99),
-            "INFO": "%.3f" % rng.uniform(0.1, 0.99)
-        }
+        info = {}
+        info["RAF"] = ("%.4f" % rng.uniform(0.01, 0.99)) if hr else None
+        info["AF"] = ("%.4f" % rng.uniform(0.01, 0.99)) if ha else None
+        info["INFO"] = ("%.3f" % rng.uniform(0.1, 0.99)) if hi else None
         group.append({
             "chrom": chrom, "pos": pos, "ref": ref, "alt": alt,
             "atomic_ids": aids, "info": info, "samples": samples,
@@ -304,7 +302,7 @@ def generate(seed=20240717):
         ok = True
         for max_alleles in MAX_ALLELES_CASES:
             for g in groups:
-                _, slack = process_group(g, ID_BUFFER, max_alleles)
+                _, slack = process_group(g, ID_BUFFER, max_alleles, False)
                 if slack < MARGIN:
                     ok = False
                     break
@@ -321,14 +319,10 @@ CONTIG = "##contig=<ID=chr1,length=100000>"
 SAMPLE_NAMES = ["S%d" % (i + 1) for i in range(NUM_SAMPLES)]
 
 # Header lines placed in the MAIN vcf: the AK/GL/KC ones must be dropped by the
-# tool, the rest passed through verbatim. The mock incoming definitions test
-# the tool's drop-and-replace logic for RAF, AF, and INFO.
+# tool, the rest passed through verbatim.
 MAIN_HEADER = [
     "##fileformat=VCFv4.2",
     CONTIG,
-    '##INFO=<ID=RAF,Number=A,Type=Float,Description="Fake incoming RAF">',
-    '##INFO=<ID=AF,Number=A,Type=Float,Description="Fake incoming AF">',
-    '##INFO=<ID=INFO,Number=A,Type=Float,Description="Fake incoming INFO">',
     '##INFO=<ID=AK,Number=1,Type=String,Description="dropped by tool">',
     '##FORMAT=<ID=GL,Number=G,Type=Float,Description="dropped by tool">',
     '##FORMAT=<ID=KC,Number=1,Type=Integer,Description="dropped by tool">',
@@ -391,26 +385,27 @@ def write_ids(path):
                                "ID=%s;AC=%d;AN=%d" % (key, ac, an)]) + "\n")
 
 
-def expected_body(groups, max_alleles):
+def expected_body(groups, max_alleles, emit_max_bubble):
     out = []
     for g in groups:
-        lines, _ = process_group(g, ID_BUFFER, max_alleles)
+        lines, _ = process_group(g, ID_BUFFER, max_alleles, emit_max_bubble)
         out.extend(lines)
     return out
 
 
-def write_expected(path, groups, max_alleles):
+def write_expected(path, groups, max_alleles, emit_max_bubble=False):
     with open(path, "w") as f:
+        # tool passes through main header lines except the dropped tokens
         for h in MAIN_HEADER:
-            if h.startswith("##INFO=<ID=RAF,") or h.startswith("##INFO=<ID=AF,") or h.startswith("##INFO=<ID=INFO,"):
-                continue
             if not any(tok in h for tok in DROP_TOKENS):
                 if h.startswith("#CHROM"):
-                    f.write('##INFO=<ID=RAF,Number=A,Type=Float,Description="ALT allele frequency in the reference panel">\n')
-                    f.write('##INFO=<ID=AF,Number=A,Type=Float,Description="ALT allele frequency computed from rounded GLIMPSE2 output DS/GP field across target samples">\n')
-                    f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="RAF-weighted average INFO score across the parent bubble for paths containing the variant">\n')
+                    f.write('##INFO=<ID=RAF,Number=A,Type=Float,Description="Panel reference allele frequency">\n')
+                    f.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Recalculated allele frequency">\n')
+                    f.write('##INFO=<ID=INFO,Number=A,Type=Float,Description="Recalculated IMPUTE INFO score">\n')
+                    if emit_max_bubble:
+                        f.write('##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description="Maximum INFO score across the parent bubble for paths containing the variant">\n')
                 f.write(h + "\n")
-        for line in expected_body(groups, max_alleles):
+        for line in expected_body(groups, max_alleles, emit_max_bubble):
             f.write(line + "\n")
 
 
@@ -426,8 +421,9 @@ def main():
     write_sites(os.path.join(here, "sites.vcf"), groups)
     write_ids(os.path.join(here, "ids.vcf"))
 
-    write_expected(os.path.join(exp, "max10.txt"), groups, 10)
-    write_expected(os.path.join(exp, "max2.txt"), groups, 2)
+    write_expected(os.path.join(exp, "max10.txt"), groups, 10, False)
+    write_expected(os.path.join(exp, "max10_maxbubble.txt"), groups, 10, True)
+    write_expected(os.path.join(exp, "max2_maxbubble.txt"), groups, 2, True)
 
     print("pop-glimpse2 fixtures + expected written "
           "(seed-stable, margin>=%.3f from all boundaries)" % MARGIN)

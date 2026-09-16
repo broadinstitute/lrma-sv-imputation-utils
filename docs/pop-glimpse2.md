@@ -47,7 +47,7 @@ worth of path lines plus a position-windowed slice of the atomic dictionary in m
 
 ```
 cat <multiallelic VCF> | pop-glimpse2 <biallelic ID VCF> <sites VCF> \
-    [max_alleles] [window_size]
+    [max_alleles] [window_size] [--emit-max-bubble]
 ```
 
 | Position | Meaning | Default |
@@ -57,16 +57,18 @@ cat <multiallelic VCF> | pop-glimpse2 <biallelic ID VCF> <sites VCF> \
 | `<sites VCF>` (arg 2) | Lockstep sites file whose `INFO/ID=<a:b:...>` lists each path's atomic ids. | *required* |
 | `max_alleles` (arg 3) | Maximum number of paths kept **per haplotype per sample** (the top-scoring ones). | `10` |
 | `window_size` (arg 4) | bp radius of the atomic-dictionary buffer around the current site. Must exceed the largest bubble span or an atomic id will be "not found". | `500000` |
+| `--emit-max-bubble` (flag) | Optional flag to calculate and emit the `INFO_MAX_BUBBLE` annotation for each variant. | *disabled* |
 
 ## 4. Output
 
 Plain VCF written to **stdout**: the retained header, then one bi-allelic record per atomic
 variant (sorted by dictionary `POS`, then `REF`, then `ALT`) with
-`FORMAT = GT:DS:GP` and `INFO = ID=...;RAF=...;AF=...;INFO=...`.
+`FORMAT = GT:DS:GP` and `INFO = ID=...;RAF=...;AF=...;INFO=...`. If the `--emit-max-bubble` flag is enabled, `INFO_MAX_BUBBLE=...` is also appended.
 
 *   **`RAF`**: The original panel frequency extracted directly from the `<biallelic ID VCF>`.
-*   **`AF`**: The frequency computed from the rounded GLIMPSE2 output DS/GP field across target samples.
-*   **`INFO`**: The maximum `INFO` score found across all paths within the parent bubble that contain the constituent variant.
+*   **`AF`**: Recomputed directly from the quantized constituent `DS` vector to ensure algebraic symmetry with the denominator.
+*   **`INFO`**: Recomputed IMPUTE-style score exactly mirroring the GLIMPSE2 C++ specification across the projected `GP` distributions.
+*   **`INFO_MAX_BUBBLE`** *(Optional)*: The maximum `INFO` score found across all paths within the parent bubble that contain the constituent.
 
 ## 5. Mathematics
 

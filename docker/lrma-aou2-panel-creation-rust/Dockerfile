@@ -19,19 +19,18 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
 
 WORKDIR /usr/src
 
-# Download, compile, and stage the latest BCFtools AND HTSlib with full optimizations
-ENV BCFTOOLS_VERSION=1.24
+# Download, compile, and stage the latest BCFtools with full optimizations
+ENV BCFTOOLS_VERSION=1.23.1
 RUN wget https://github.com/samtools/bcftools/releases/download/${BCFTOOLS_VERSION}/bcftools-${BCFTOOLS_VERSION}.tar.bz2 && \
     tar -vxjf bcftools-${BCFTOOLS_VERSION}.tar.bz2 && \
     cd bcftools-${BCFTOOLS_VERSION} && \
     ./configure \
-        --prefix=/usr/local \
-        --enable-libcurl \
-        --with-libdeflate \
-        --enable-gsl && \
+    --prefix=/usr/local \
+    --enable-libcurl \
+    --with-libdeflate \
+    --enable-gsl && \
     make -j$(nproc) && \
-    make install DESTDIR=/tmp/bcftools_stage && \
-    make -C htslib-${BCFTOOLS_VERSION} install DESTDIR=/tmp/bcftools_stage
+    make install DESTDIR=/tmp/bcftools_stage
 
 # ==========================================
 # Stage 2: Development & Runtime Environment

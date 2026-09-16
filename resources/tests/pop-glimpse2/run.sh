@@ -43,10 +43,14 @@ run_case() {
 }
 
 # Default max_alleles (10) >= alleles-per-bubble: full projection, every allele
-# contributes to the odds-normalisation.
+# contributes to the odds-normalisation. No emit-max-bubble flag.
 run_case max10 "${DATA}/expected/max10.txt"
-# max_alleles = 2 < 3 alleles: exercises the stable top-k score cut.
-run_case max2  "${DATA}/expected/max2.txt" 2
+
+# Default max_alleles (10) but with emit-max-bubble enabled
+run_case max10_maxbubble "${DATA}/expected/max10_maxbubble.txt" 10 500000 --emit-max-bubble
+
+# max_alleles = 2 < 3 alleles: exercises the stable top-k score cut, with emit-max-bubble enabled.
+run_case max2_maxbubble  "${DATA}/expected/max2_maxbubble.txt" 2 500000 --emit-max-bubble
 
 # Lockstep guard: a sites file whose ALT disagrees with the main stream must
 # abort with the synchronisation error rather than emit anything.
