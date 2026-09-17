@@ -46,7 +46,7 @@ run_case() {
 # contributes to the odds-normalisation.
 run_case max10 "${DATA}/expected/max10.txt"
 # max_alleles = 2 < 3 alleles: exercises the stable top-k score cut.
-run_case max2  "${DATA}/expected/max2.txt" 2
+run_case max2  "${DATA}/expected/max2.txt" 2 500000
 
 # Lockstep guard: a sites file whose ALT disagrees with the main stream must
 # abort with the synchronisation error rather than emit anything.
