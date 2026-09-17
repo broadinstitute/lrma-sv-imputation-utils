@@ -9,8 +9,7 @@ use std::time::Instant;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 struct Record {
-    atomic_ids: Vec<String>,
-    path_info: f32,
+    atomic_ids: Vec<String>
 }
 
 #[derive(Clone)]
@@ -42,7 +41,6 @@ fn process_group(
     group_lines: &[(String, String)],
     id_buffer: &HashMap<String, (u32, String, String, String, String)>,
     max_alleles: usize,
-    emit_max_bubble: bool,
     out_handle: &mut impl Write,
 ) {
     if group_lines.is_empty() { return; }
@@ -63,15 +61,6 @@ fn process_group(
     for (a, (line, site_info)) in group_lines.iter().enumerate() {
         let fields: Vec<&str> = line.trim_end().split('\t').collect();
 
-        let mut path_info = -1.0_f32;
-        for item in fields[7].split(';') {
-            if let Some(v) = item.strip_prefix("INFO=") {
-                if let Ok(f) = v.parse::<f32>() {
-                    path_info = f;
-                }
-            }
-        }
-
         let mut atomic_ids = Vec::new();
         for item in site_info.split(';') {
             if let Some(id_str) = item.strip_prefix("ID=") {
@@ -88,7 +77,7 @@ fn process_group(
             }
         }
 
-        records.push(Record { atomic_ids, path_info });
+        records.push(Record { atomic_ids });
 
         let fmt: Vec<&str> = fields[8].split(':').collect();
         let gt_idx = fmt.iter().position(|&x| x == "GT");
@@ -221,7 +210,14 @@ fn process_group(
             let gp0_raw = (1.0 - p0) * (1.0 - p1);
             let gp1_raw = p0 * (1.0 - p1) + (1.0 - p0) * p1;
             let gp2_raw = p0 * p1;
+            
+            // USE CONTINUOUS PROBABILITIES FOR VARIANCE MATH
+            let ds_raw = gp1_raw + 2.0 * gp2_raw;
+            ds_sum += ds_raw;
+            ds2_sum += ds_raw * ds_raw;
+            ds4_sum += gp1_raw + 4.0 * gp2_raw;
 
+            // Generate output strings using quantized grid
             let mut v0 = (gp0_raw * 1000.0).round() as i32;
             let mut v1 = (gp1_raw * 1000.0).round() as i32;
             let mut v2 = (gp2_raw * 1000.0).round() as i32;
@@ -235,11 +231,6 @@ fn process_group(
 
             let gp1_q = v1 as f32 / 1000.0;
             let gp2_q = v2 as f32 / 1000.0;
-            let ds_q = gp1_q + 2.0 * gp2_q;
-            
-            ds_sum += ds_q;
-            ds2_sum += ds_q * ds_q;
-            ds4_sum += gp1_q + 4.0 * gp2_q;
 
             let gp_str = format!("{},{},{}",
                 format_float(v0 as f32 / 1000.0),
@@ -264,18 +255,6 @@ fn process_group(
 
         new_info.push(format!("AF={}", format_float(af)));
         new_info.push(format!("INFO={}", format_float(recalc_info_rounded)));
-        
-        if emit_max_bubble {
-            let mut max_info = -1.0_f32;
-            for rec in &records {
-                if rec.atomic_ids.contains(&assigned_id) {
-                    max_info = max_info.max(rec.path_info);
-                }
-            }
-            if max_info >= 0.0 {
-                new_info.push(format!("INFO_MAX_BUBBLE={}", format_float(max_info)));
-            }
-        }
 
         let mut vcf_line = vec![
             chrom.clone(),
@@ -295,14 +274,10 @@ fn process_group(
 }
 
 fn main() {
-    let mut args: Vec<String> = env::args().collect();
-    
-    // Parse and remove the optional flag so it doesn't break positional parsing
-    let emit_max_bubble = args.contains(&"--emit-max-bubble".to_string());
-    args.retain(|arg| arg != "--emit-max-bubble");
+    let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        eprintln!("Usage: cat <multiallelic VCF> | {} <biallelic ID VCF> <sites VCF> [max_alleles] [window_size] [--emit-max-bubble]", args[0]);
+        eprintln!("Usage: cat <multiallelic VCF> | {} <biallelic ID VCF> <sites VCF> [max_alleles] [window_size]", args[0]);
         std::process::exit(1);
     }
 
@@ -349,7 +324,6 @@ fn main() {
     let mut seen_raf = false;
     let mut seen_af = false;
     let mut seen_info = false;
-    let mut seen_max_bubble = false;
 
     for line_result in stdin.lock().lines() {
         let line = line_result.unwrap();
@@ -358,13 +332,11 @@ fn main() {
             if line.starts_with("##INFO=<ID=RAF,") { seen_raf = true; }
             if line.starts_with("##INFO=<ID=AF,") { seen_af = true; }
             if line.starts_with("##INFO=<ID=INFO,") { seen_info = true; }
-            if line.starts_with("##INFO=<ID=INFO_MAX_BUBBLE,") { seen_max_bubble = true; }
 
             if line.starts_with("#CHROM") {
                 if !seen_raf { writeln!(out_handle, "##INFO=<ID=RAF,Number=A,Type=Float,Description=\"Panel reference allele frequency\">").unwrap(); }
                 if !seen_af { writeln!(out_handle, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Recalculated allele frequency\">").unwrap(); }
                 if !seen_info { writeln!(out_handle, "##INFO=<ID=INFO,Number=A,Type=Float,Description=\"Recalculated IMPUTE INFO score\">").unwrap(); }
-                if emit_max_bubble && !seen_max_bubble { writeln!(out_handle, "##INFO=<ID=INFO_MAX_BUBBLE,Number=A,Type=Float,Description=\"Maximum INFO score across the parent bubble for paths containing the variant\">").unwrap(); }
                 writeln!(out_handle, "{}", line).unwrap();
             } else if !line.contains("INFO=<ID=AK") && !line.contains("FORMAT=<ID=GL") && !line.contains("FORMAT=<ID=KC") {
                 writeln!(out_handle, "{}", line).unwrap();
@@ -417,7 +389,7 @@ fn main() {
         }
 
         if pos != *current_pos.as_ref().unwrap() || chrom != current_chrom {
-            process_group(&group, &id_buffer, max_alleles, emit_max_bubble, &mut out_handle);
+            process_group(&group, &id_buffer, max_alleles, &mut out_handle);
             group.clear();
             current_pos = Some(pos.clone());
             current_chrom = chrom.clone();
@@ -500,7 +472,7 @@ fn main() {
     }
 
     if !group.is_empty() {
-        process_group(&group, &id_buffer, max_alleles, emit_max_bubble, &mut out_handle);
+        process_group(&group, &id_buffer, max_alleles, &mut out_handle);
     }
 
     out_handle.flush().unwrap();

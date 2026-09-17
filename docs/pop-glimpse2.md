@@ -68,7 +68,6 @@ variant (sorted by dictionary `POS`, then `REF`, then `ALT`) with
 *   **`RAF`**: The original panel frequency extracted directly from the `<biallelic ID VCF>`.
 *   **`AF`**: Recomputed directly from the quantized constituent `DS` vector to ensure algebraic symmetry with the denominator.
 *   **`INFO`**: Recomputed IMPUTE-style score exactly mirroring the GLIMPSE2 C++ specification across the projected `GP` distributions.
-*   **`INFO_MAX_BUBBLE`** *(Optional)*: The maximum `INFO` score found across all paths within the parent bubble that contain the constituent.
 
 ## 5. Mathematics
 
