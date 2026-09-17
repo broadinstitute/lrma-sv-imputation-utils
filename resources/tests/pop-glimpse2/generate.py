@@ -32,7 +32,6 @@ def f32(x):
     return struct.unpack("f", struct.pack("f", float(x)))[0]
 
 F32_1 = f32(1.0)
-CLAMP_LO = f32(1e-5)
 CLAMP_HI = f32(1.0 - 1e-5)      # computed in f32, matching `1.0 - 1e-5`
 
 
@@ -93,8 +92,9 @@ def process_group(group, id_buffer, max_alleles):
             else:
                 half = f32(gp2 + f32(gp1 / f32(2.0)))
                 p0, p1 = half, half
-            hap_probs[s][a] = (clamp(p0, CLAMP_LO, CLAMP_HI),
-                               clamp(p1, CLAMP_LO, CLAMP_HI))
+            
+            # Change 1: Removed 1e-5 lower clamp
+            hap_probs[s][a] = (clamp(p0, 0.0, CLAMP_HI), clamp(p1, 0.0, CLAMP_HI))
 
     # accumulate per-atomic distributions
     dists = {aid: [[0.0, 0.0] for _ in range(num_samples)] for aid in all_atomic}
@@ -143,9 +143,9 @@ def process_group(group, id_buffer, max_alleles):
 
         cols = [chrom, str(pos), orig_id, ref, alt, ".", ".", "INFO_PH", "GT:DS:GP"]
         
-        ds_sum = 0.0
-        ds2_sum = 0.0
-        ds4_sum = 0.0
+        # Change 2: Use native python floats (f64) for algebraic variance accumulation
+        s_ds = 0.0
+        s_var = 0.0
         sample_strings = []
 
         for s in range(num_samples):
@@ -164,11 +164,11 @@ def process_group(group, id_buffer, max_alleles):
             gp1 = f32(f32(p0 * f32(F32_1 - p1)) + f32(f32(F32_1 - p0) * p1))
             gp2 = f32(p0 * p1)
             
-            # USE CONTINUOUS PROBABILITIES FOR VARIANCE MATH
-            ds_raw_q = f32(gp1 + f32(2.0 * gp2))
-            ds_sum = f32(ds_sum + ds_raw_q)
-            ds2_sum = f32(ds2_sum + f32(ds_raw_q * ds_raw_q))
-            ds4_sum = f32(ds4_sum + f32(gp1 + f32(4.0 * gp2)))
+            # Change 2: Perform pure algebraic variance natively in f64
+            p0_f64 = float(p0)
+            p1_f64 = float(p1)
+            s_ds += p0_f64 + p1_f64
+            s_var += p0_f64 * (1.0 - p0_f64) + p1_f64 * (1.0 - p1_f64)
 
             # Generate output strings using quantized grid
             for g in (gp0, gp1, gp2):
@@ -194,19 +194,21 @@ def process_group(group, id_buffer, max_alleles):
                                format_float(gp2_q))
             sample_strings.append("%s:%s:%s" % ("%s|%s" % (hap0, hap1), ds, gp))
 
-        n_tar_haps = f32(2.0 * num_samples)
-        safe_n = max(n_tar_haps, f32(1e-9))
-        af = f32(ds_sum / safe_n)
-        denom = f32(n_tar_haps * f32(af * f32(F32_1 - af)))
+        # Change 2: Denominator and exact INFO calculation in f64
+        n_haps = 2.0 * float(num_samples)
+        af = s_ds / n_haps
 
-        recalc_info = F32_1
-        if af > 0.0 and af < 1.0 and denom > 0.0:
-            recalc_info = f32(F32_1 - f32(f32(ds4_sum - ds2_sum) / denom))
-        recalc_info = max(recalc_info, 0.0)
-        recalc_info_rounded = f32(rha(f32(recalc_info * 1000.0)) / 1000.0)
+        recalc_info = None
+        if 0.0 < af < 1.0:
+            denom = n_haps * af * (1.0 - af)
+            ratio = s_var / denom
+            recalc_info = clamp(1.0 - ratio, 0.0, 1.0)
 
-        info.append("AF=%s" % format_float(af))
-        info.append("INFO=%s" % format_float(recalc_info_rounded))
+        info.append("AF=%.6f" % af)
+        if recalc_info is not None:
+            info.append("INFO=%.3f" % recalc_info)
+        else:
+            info.append("INFO=.")
 
         cols[7] = ";".join(info)
         cols.extend(sample_strings)
