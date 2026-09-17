@@ -115,7 +115,7 @@ fn process_group(
                 (gp2 + (gp1 / 2.0), gp2 + (gp1 / 2.0))
             };
 
-            hap_probs[s][a] = (p0.clamp(1e-5, 1.0 - 1e-5), p1.clamp(1e-5, 1.0 - 1e-5));
+            hap_probs[s][a] = (p0.clamp(0.0, 1.0 - 1e-5), p1.clamp(0.0, 1.0 - 1e-5));
         }
     }
 
