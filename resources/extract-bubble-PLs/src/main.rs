@@ -349,7 +349,12 @@ fn main() -> Result<()> {
                         min_reps, gqs, pls, pl_stride, gts
                     });
                 },
-                Some(Err(_)) | None => { input_eof = true; }
+                Some(Err(e)) => {
+                    return Err(e).with_context(|| format!(
+                        "Failed reading an input record near panel site {}:{}",
+                        current_panel_chrom_str, p_pos + 1));
+                }
+                None => { input_eof = true; }
             }
         }
 
