@@ -115,6 +115,7 @@ fn process_group(
                 (gp2 + (gp1 / 2.0), gp2 + (gp1 / 2.0))
             };
 
+            // Change 1: Drop the lower clamp to remove the artificial noise floor
             hap_probs[s][a] = (p0.clamp(0.0, 1.0 - 1e-5), p1.clamp(0.0, 1.0 - 1e-5));
         }
     }
@@ -191,9 +192,8 @@ fn process_group(
 
         let dists = atomic_sample_dists.get(&assigned_id).unwrap_or(&empty_dists);
 
-        let mut ds_sum = 0.0_f32;
-        let mut ds2_sum = 0.0_f32;
-        let mut ds4_sum = 0.0_f32;
+        // Change 2: Use f64 accumulator variables for the algebraic variance calculation
+        let (mut s_ds, mut s_var) = (0.0_f64, 0.0_f64);
         let mut sample_strings = Vec::with_capacity(num_samples);
 
         for s in 0..num_samples {
@@ -211,11 +211,11 @@ fn process_group(
             let gp1_raw = p0 * (1.0 - p1) + (1.0 - p0) * p1;
             let gp2_raw = p0 * p1;
             
-            // USE CONTINUOUS PROBABILITIES FOR VARIANCE MATH
-            let ds_raw = gp1_raw + 2.0 * gp2_raw;
-            ds_sum += ds_raw;
-            ds2_sum += ds_raw * ds_raw;
-            ds4_sum += gp1_raw + 4.0 * gp2_raw;
+            // Change 2: Accumulate dosage and variance algebraically using continuous probabilities in f64
+            let p0_f64 = p0 as f64;
+            let p1_f64 = p1 as f64;
+            s_ds += p0_f64 + p1_f64;
+            s_var += p0_f64 * (1.0 - p0_f64) + p1_f64 * (1.0 - p1_f64);
 
             // Generate output strings using quantized grid
             let mut v0 = (gp0_raw * 1000.0).round() as i32;
@@ -241,20 +241,18 @@ fn process_group(
             sample_strings.push(format!("{}:{}:{}", gt, ds_str, gp_str));
         }
 
-        let n_tar_haps = 2.0 * num_samples as f32;
-        let safe_n = n_tar_haps.max(1e-9);
-        let af = ds_sum / safe_n;
-        let denom = n_tar_haps * af * (1.0 - af);
+        // Change 2: Handle denominator and INFO natively in f64
+        let n_haps = 2.0 * num_samples as f64;
+        let af = s_ds / n_haps;
         
-        let mut recalc_info = 1.0_f32;
-        if af > 0.0 && af < 1.0 && denom > 0.0 {
-            recalc_info = 1.0 - (ds4_sum - ds2_sum) / denom;
-        }
-        recalc_info = recalc_info.max(0.0);
-        let recalc_info_rounded = (recalc_info * 1000.0).round() / 1000.0;
+        let info = if af > 0.0 && af < 1.0 {
+            Some((1.0 - s_var / (n_haps * af * (1.0 - af))).clamp(0.0, 1.0))
+        } else {
+            None
+        };
 
-        new_info.push(format!("AF={}", format_float(af)));
-        new_info.push(format!("INFO={}", format_float(recalc_info_rounded)));
+        new_info.push(format!("AF={:.6}", af));
+        new_info.push(match info { Some(v) => format!("INFO={:.3}", v), None => "INFO=.".to_string() });
 
         let mut vcf_line = vec![
             chrom.clone(),
@@ -398,9 +396,9 @@ fn main() {
         if group.is_empty() {
             let pos_u32 = pos.parse::<u32>().unwrap_or(0);
 
+            // Change 4: Clear the buffer without prematurely capturing the active_id_chrom
             if current_chrom != active_id_chrom {
                 id_buffer.clear();
-                active_id_chrom = current_chrom.clone();
             }
 
             id_buffer.retain(|_, v| v.0 + window_size >= pos_u32);
@@ -413,13 +411,9 @@ fn main() {
                 let peek_fields: Vec<&str> = peek_line.splitn(3, '\t').collect();
                 let peek_chrom = peek_fields[0];
 
+                // Change 4: Break gracefully when hitting a chromosome boundary
                 if peek_chrom != current_chrom {
-                    if active_id_chrom != current_chrom {
-                        id_iter.next();
-                        continue;
-                    } else {
-                        break;
-                    }
+                    break;
                 }
 
                 let peek_pos: u32 = peek_fields[1].parse().unwrap_or(0);
@@ -466,6 +460,9 @@ fn main() {
                     id_buffer.insert(id_val, (peek_pos, orig_id, ref_seq, alt_seq, af_val));
                 }
             }
+            
+            // Change 4: Safely assign the active chrom outside the loop
+            active_id_chrom = current_chrom.clone();
         }
 
         group.push((line, site_info));
