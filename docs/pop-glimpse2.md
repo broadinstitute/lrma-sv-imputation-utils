@@ -53,7 +53,7 @@ present on the output).
 
 ## 3. Command-line interface
 
-```
+```bash
 cat <multiallelic VCF> | pop-glimpse2 <biallelic ID VCF> <sites VCF> \
     [max_alleles] [window_size]
 ```
@@ -70,8 +70,10 @@ cat <multiallelic VCF> | pop-glimpse2 <biallelic ID VCF> <sites VCF> \
 
 Plain VCF written to **stdout**: the retained header, then one bi-allelic record per atomic
 variant (sorted by dictionary `POS`, then `REF`, then `ALT`) with
-`FORMAT = GT:DS:GP` and `INFO = ID=<atomic_id>;RAF=…;AF=…;INFO=…` (the `RAF/AF/INFO` copied
-from the first path that contains the atomic variant).
+`FORMAT = GT:DS:GP` and `INFO = ID=<atomic_id>;RAF=…;AF=…;INFO=…;N_PATHS=…;N_PATHS_TOTAL=…`. 
+`RAF` is copied from the atomic-variant dictionary. `AF` and `INFO` are recalculated from the 
+projected dosages, and `N_PATHS` / `N_PATHS_TOTAL` represent the number of paths carrying the 
+variant versus total paths in the bubble.
 
 ## 5. Mathematics
 
@@ -84,15 +86,15 @@ For sample *s* and path *a*, let GLIMPSE2's posteriors be `GP = (gp0, gp1, gp2)`
 `P(0/0), P(0|1 or 1|0), P(1/1)` and let the phased hard-call be the record's `GT`. Define
 the probability that **hap 0** and **hap 1** carry this path's ALT as:
 
-```
-GT = "1|0":  (p0, p1) = (gp2 + gp1, gp2)
-GT = "0|1":  (p0, p1) = (gp2,       gp2 + gp1)
-otherwise :  (p0, p1) = (gp2 + gp1/2, gp2 + gp1/2)
+```text
+GT = "1|0":                        (p0, p1) = (gp2 + gp1, gp2)
+GT = "0|1":                        (p0, p1) = (gp2,       gp2 + gp1)
+otherwise (including missing .|.): (p0, p1) = (gp2 + gp1/2, gp2 + gp1/2)
 ```
 
 Each is then clamped to `[1e-5, 1 − 1e-5]`. Intuitively `gp2` (hom-alt) contributes to both
 haplotypes, while the heterozygous mass `gp1` is assigned to the phased haplotype (or split
-evenly when phase is unknown).
+evenly when phase is unknown or missing).
 
 ### 5.2 Per-haplotype path selection and normalisation
 
@@ -102,7 +104,7 @@ For each sample and haplotype `h ∈ {0,1}` independently:
 2. Convert each kept path's probability to **odds** `w_h(a) = p_h(a) / (1 − p_h(a))`.
 3. Normalise with an **implicit reference pseudo-path of weight 1**:
 
-```
+```text
 Z_h = 1 + Σ_a w_h(a)
 p̂_h(a) = w_h(a) / Z_h
 ```
@@ -116,18 +118,19 @@ makes the selection scale-free.
 Each atomic variant `v` receives, per haplotype, the summed normalised probability of every
 kept path that contains it:
 
-```
+```text
 P_h(v) = Σ_{a : v ∈ path a} p̂_h(a)
 ```
 
 accumulated across the (up to `max_alleles`) kept paths, per sample. Call the two results
-`p0 = P_0(v)` and `p1 = P_1(v)`, each finally clamped to `[0, 1]`.
+`p0 = P_0(v)` and `p1 = P_1(v)`, each finally clamped to `[0, 1]`. Probabilities below `2e-4`
+are zeroed out as noise filtering.
 
 ### 5.4 Emitted `GT`, `DS`, `GP`
 
 Assuming the two haplotypes are independent Bernoulli(`p0`), Bernoulli(`p1`):
 
-```
+```text
 GT   : hap0 = 1 if p0 > 0.5 else 0 ; hap1 = 1 if p1 > 0.5 else 0   (phased, "h0|h1")
 DS   : p0 + p1                                                      (expected ALT count)
 GP0  : (1 − p0)(1 − p1)          # P(0/0)
@@ -142,9 +145,16 @@ is printed as `v_i / 1000`.
 
 ### 5.5 Number formatting
 
-`format_float(x)` prints `x` with three decimals then strips trailing zeros and a trailing
-`.`, mapping the empty result to `"0"` (so `0.500 → "0.5"`, `1.000 → "1"`, `0.000 → "0"`).
-`DS` is `format_float(p0 + p1)`; each `GP` component is `format_float(v_i / 1000)`.
+Different fields use specific formatting rules to match downstream expectations:
+* **`DS` and `GP`:** `format_float(x)` prints `x` with three decimals then strips trailing zeros and a trailing `.`, mapping the empty result to `"0"` (so `0.500 → "0.5"`, `1.000 → "1"`, `0.000 → "0"`). `DS` is `format_float(p0 + p1)`; each `GP` component is `format_float(v_i / 1000)`.
+* **`AF`:** Formatted to exactly 6 decimal places (`{:.6}`).
+* **`INFO`:** Formatted to exactly 3 decimal places (`{:.3}`).
+
+### 5.6 Population-level metrics (`AF` and `INFO`)
+
+`AF` is calculated as the mean expected dosage (`sum(DS) / 2N`). `INFO` is the IMPUTE INFO score 
+recalculated from the dosage variance (`1.0 - sum(Var(DS)) / (2N * AF * (1-AF))`). Following the 
+GLIMPSE2 convention, `INFO` is defined as `1.0` when `AF` is `0` or `1`.
 
 ## 6. Notes for pipeline maintainers
 
