@@ -123,8 +123,10 @@ fn process_group(
     }
 
     let mut atomic_sample_dists: HashMap<String, Vec<PhasedDist>> = HashMap::new();
+    let mut unclamped_dists: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
     for id in carriers.keys() {
         atomic_sample_dists.insert(id.clone(), vec![PhasedDist { p0: 0.0, p1: 0.0 }; num_samples]);
+        unclamped_dists.insert(id.clone(), vec![(0.0, 0.0); num_samples]);
     }
 
     let mut allele_scores: Vec<(usize, f32)> = Vec::with_capacity(num_alleles);
@@ -153,6 +155,21 @@ fn process_group(
             w1_map.insert(a, w1);
             z0 += w0;
             z1 += w1;
+        }
+
+        // the same projection for AF/INFO without the clamp: a path clamped to 1e-5 contributes
+        // 0 and paths clamped to 1 - 1e-5 share the haplotype equally
+        for h in 0..2 {
+            let p = |a: usize| if h == 0 { hap_probs[s][a].0 } else { hap_probs[s][a].1 };
+            let n_hi = top_alleles.iter().filter(|&&a| p(a) >= 1.0 - 1e-5).count();
+            let z = top_alleles.iter().filter(|&&a| p(a) > 1e-5).fold(1.0_f64, |z, &a| z + p(a) as f64 / (1.0 - p(a) as f64));
+            for &a in &top_alleles {
+                let q = if n_hi > 0 { if p(a) >= 1.0 - 1e-5 { 1.0 / n_hi as f64 } else { 0.0 } }
+                        else if p(a) > 1e-5 { p(a) as f64 / (1.0 - p(a) as f64) / z } else { 0.0 };
+                for atomic_id in &records[a].atomic_ids {
+                    if let Some(d) = unclamped_dists.get_mut(atomic_id) { if h == 0 { d[s].0 += q } else { d[s].1 += q } }
+                }
+            }
         }
 
         for &a in &top_alleles {
@@ -188,7 +205,7 @@ fn process_group(
         let coord = var_data.0;
 
         // RAF comes from the variant's record in the biallelic ID VCF. AF and INFO are computed
-        // below from the same haplotype probabilities as GT, DS and GP.
+        // below from the unclamped projection (unclamped_dists); GT, DS and GP use the clamped one.
         let carrying: &Vec<usize> = &carriers[&assigned_id];
 
         let mut new_info = vec![format!("ID={}", assigned_id)];
@@ -196,14 +213,14 @@ fn process_group(
 
         let dists = atomic_sample_dists.get(&assigned_id).unwrap_or(&empty_dists);
 
-        // IMPUTE INFO of the GP written here is 1 - sum_i Var(DS_i) / (2N af (1-af)), with
+        // IMPUTE INFO of the unclamped projection is 1 - sum_i Var(DS_i) / (2N af (1-af)), with
         // Var(DS_i) = p0(1-p0) + p1(1-p1) for independent haplotypes. It is 1 when the printed af is 0 or 1.
-        // Probabilities below 2e-4 come from the 1e-5 clamp in hap_probs and are zeroed. A variant
+        // It uses unclamped_dists, computed without the 1e-5 clamp in hap_probs. A variant
         // absent from all samples then gets AF=0 and INFO=1.
         let (mut s_ds, mut s_var) = (0.0_f64, 0.0_f64);
-        for dist in dists.iter() {
-            let q0 = { let q = dist.p0.clamp(0.0, 1.0) as f64; if q < 2e-4 { 0.0 } else { q } };
-            let q1 = { let q = dist.p1.clamp(0.0, 1.0) as f64; if q < 2e-4 { 0.0 } else { q } };
+        for dist in unclamped_dists[&assigned_id].iter() {
+            let q0 = dist.0.clamp(0.0, 1.0);
+            let q1 = dist.1.clamp(0.0, 1.0);
             s_ds += q0 + q1;
             s_var += q0 * (1.0 - q0) + q1 * (1.0 - q1);
         }

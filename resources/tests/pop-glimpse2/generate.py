@@ -64,6 +64,7 @@ def process_group(group, id_buffer, max_alleles):
                                clamp(p1, CLAMP_LO, CLAMP_HI))
 
     dists = {aid: [[0.0, 0.0] for _ in range(num_samples)] for aid in all_atomic}
+    unclamped = {aid: [[0.0, 0.0] for _ in range(num_samples)] for aid in all_atomic}
 
     for s in range(num_samples):
         scores = []
@@ -88,6 +89,20 @@ def process_group(group, id_buffer, max_alleles):
             z0 = f32(z0 + w0)
             z1 = f32(z1 + w1)
             
+        for h in (0, 1):
+            ps = {a: hap_probs[s][a][h] for a in top}
+            n_hi = sum(1 for a in top if ps[a] >= CLAMP_HI)
+            z = 1.0
+            for a in top:
+                if ps[a] > CLAMP_LO: z += ps[a] / (1.0 - ps[a])
+            for a in top:
+                if n_hi:
+                    q = 1.0 / n_hi if ps[a] >= CLAMP_HI else 0.0
+                else:
+                    q = ps[a] / (1.0 - ps[a]) / z if ps[a] > CLAMP_LO else 0.0
+                for aid in group[a]["atomic_ids"]:
+                    unclamped[aid][s][h] += q
+
         for a in top:
             np0 = f32(w0m[a] / z0)
             np1 = f32(w1m[a] / z1)
@@ -105,10 +120,8 @@ def process_group(group, id_buffer, max_alleles):
         
         s_ds, s_var = 0.0, 0.0
         for s in range(num_samples):
-            q0 = clamp(dists[aid][s][0], 0.0, 1.0)
-            if q0 < 2e-4: q0 = 0.0
-            q1 = clamp(dists[aid][s][1], 0.0, 1.0)
-            if q1 < 2e-4: q1 = 0.0
+            q0 = clamp(unclamped[aid][s][0], 0.0, 1.0)
+            q1 = clamp(unclamped[aid][s][1], 0.0, 1.0)
             s_ds += q0 + q1
             s_var += q0 * (1.0 - q0) + q1 * (1.0 - q1)
 
@@ -187,6 +200,8 @@ ID_BUFFER = {
     "v9": (5001, "rs9", "T", "G", "0.500000"),
     "v10": (6000, "rs10", "G", "T", "0.999500"),
     "v11": (7000, "rs11", "C", "G", "0.999000"),
+    "v12": (9000, "rs12", "T", "A", "0.000100"),
+    "v13": (9000, "rs13", "T", "C", "0.999000"),
 }
 
 BUBBLES = [
@@ -218,6 +233,10 @@ BUBBLES = [
     ("chr1", 7000, [
         ("C", "G", ["v11"]),
     ]),
+    ("chr1", 9000, [
+        ("T", "A", ["v12"]),
+        ("T", "C", ["v13"]),
+    ]),
 ]
 
 GT_CHOICES = ["1|0", "0|1", "1|1", "0|0"]
@@ -247,6 +266,12 @@ def build_group(bubble, rng):
             elif pos == 7000:
                 gt = "1|1"
                 gp = ("0", "0.001", "0.999")
+            elif pos == 9000 and alt == "A":   # v12: q ~4e-7, AF prints 0.000000, INFO must be 1
+                gt = "0|0"
+                gp = ("0.9992", "0.0008", "0")
+            elif pos == 9000:
+                gt = "1|1"
+                gp = ("0", "0.002", "0.998")
             else:
                 gt = rng.choice(GT_CHOICES)
                 gp = sample_gp(rng)

@@ -77,8 +77,8 @@ variant versus total paths in the bubble.
 
 ## 5. Mathematics
 
-All arithmetic below is performed in **32-bit floating point** (`f32`), except the `AF`/`INFO` sums of 5.6
-(`f64`); this matters for bit-exact reproduction (see the testing notes).
+All arithmetic below is performed in **32-bit floating point** (`f32`), except the `AF`/`INFO` computation
+(5.3, 5.6), which is `f64`; this matters for bit-exact reproduction (see the testing notes).
 
 ### 5.1 Per-path phased haplotype probabilities
 
@@ -123,8 +123,9 @@ P_h(v) = Σ_{a : v ∈ path a} p̂_h(a)
 ```
 
 accumulated across the (up to `max_alleles`) kept paths, per sample. Call the two results
-`p0 = P_0(v)` and `p1 = P_1(v)`, each finally clamped to `[0, 1]`. Probabilities below `2e-4`
-are zeroed out as noise filtering in the `AF`/`INFO` sums only (5.6), not in `GT`, `DS` and `GP`.
+`p0 = P_0(v)` and `p1 = P_1(v)`, each finally clamped to `[0, 1]`. The `AF`/`INFO` sums (5.6) repeat
+this projection without the `1e-5` clamp of 5.1: a path clamped to `1e-5` contributes 0 and paths
+clamped to `1 − 1e-5` share the haplotype equally. `GT`, `DS` and `GP` use the clamped values.
 
 ### 5.4 Emitted `GT`, `DS`, `GP`
 
@@ -152,7 +153,7 @@ Different fields use specific formatting rules to match downstream expectations:
 
 ### 5.6 Population-level metrics (`AF` and `INFO`)
 
-`AF` is calculated as the mean expected dosage (`sum(DS) / 2N`). `INFO` is the IMPUTE INFO score 
+`AF` is the mean unclamped dosage per haplotype (5.3). `INFO` is the IMPUTE INFO score 
 recalculated from the dosage variance (`1.0 - sum(Var(DS)) / (2N * AF * (1-AF))`). Following the 
 GLIMPSE2 convention, `INFO` is defined as `1.0` when the printed `AF` is `0` or `1`.
 
