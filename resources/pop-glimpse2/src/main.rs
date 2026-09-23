@@ -197,9 +197,9 @@ fn process_group(
         let dists = atomic_sample_dists.get(&assigned_id).unwrap_or(&empty_dists);
 
         // IMPUTE INFO of the GP written here is 1 - sum_i Var(DS_i) / (2N af (1-af)), with
-        // Var(DS_i) = p0(1-p0) + p1(1-p1) for independent haplotypes. It is "." when af is 0 or 1.
+        // Var(DS_i) = p0(1-p0) + p1(1-p1) for independent haplotypes. It is 1 when the printed af is 0 or 1.
         // Probabilities below 2e-4 come from the 1e-5 clamp in hap_probs and are zeroed. A variant
-        // absent from all samples then gets AF=0 and INFO=.
+        // absent from all samples then gets AF=0 and INFO=1.
         let (mut s_ds, mut s_var) = (0.0_f64, 0.0_f64);
         for dist in dists.iter() {
             let q0 = { let q = dist.p0.clamp(0.0, 1.0) as f64; if q < 2e-4 { 0.0 } else { q } };
@@ -209,10 +209,11 @@ fn process_group(
         }
         let n_haps = 2.0 * num_samples as f64;
         let af = s_ds / n_haps;
-        // follow GLIMPSE2 convention: INFO=0 if AF=0 or 1
-        let info = if af > 0.0 && af < 1.0 { Some((1.0 - s_var / (n_haps * af * (1.0 - af))).clamp(0.0, 1.0)) } else { Some(1.0) };
-        new_info.push(format!("AF={:.6}", af));
-        new_info.push(match info { Some(v) => format!("INFO={:.3}", v), None => "INFO=.".to_string() });
+        let af_str = format!("{:.6}", af);
+        // follow GLIMPSE2 convention: INFO=1 if AF=0 or 1
+        let info = if af_str != "0.000000" && af_str != "1.000000" { (1.0 - s_var / (n_haps * af * (1.0 - af))).clamp(0.0, 1.0) } else { 1.0 };
+        new_info.push(format!("AF={}", af_str));
+        new_info.push(format!("INFO={:.3}", info));
         new_info.push(format!("N_PATHS={};N_PATHS_TOTAL={}", carrying.len(), num_alleles));
 
         let mut vcf_line = vec![

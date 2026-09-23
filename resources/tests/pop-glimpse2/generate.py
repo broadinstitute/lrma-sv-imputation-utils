@@ -115,7 +115,8 @@ def process_group(group, id_buffer, max_alleles):
         n_haps = 2.0 * num_samples
         af = s_ds / n_haps
         
-        if 0.0 < af < 1.0:
+        af_str = "%.6f" % af
+        if af_str not in ("0.000000", "1.000000"):
             info_val = clamp(1.0 - s_var / (n_haps * af * (1.0 - af)), 0.0, 1.0)
         else:
             info_val = 1.0
@@ -123,7 +124,7 @@ def process_group(group, id_buffer, max_alleles):
         info = ["ID=%s" % aid]
         if raf:
             info.append("RAF=%s" % raf)
-        info.append("AF=%.6f" % af)
+        info.append("AF=" + af_str)
         info.append("INFO=%.3f" % info_val)
         info.append(f"N_PATHS={len(carrying)};N_PATHS_TOTAL={num_alleles}")
 
@@ -184,6 +185,8 @@ ID_BUFFER = {
     "v7": (4000, "rs7", "C", "A", "0.010000"),
     "v8": (5000, "rs8", "A", "G", "0.500000"),
     "v9": (5001, "rs9", "T", "G", "0.500000"),
+    "v10": (6000, "rs10", "G", "T", "0.999500"),
+    "v11": (7000, "rs11", "C", "G", "0.999000"),
 }
 
 BUBBLES = [
@@ -209,6 +212,12 @@ BUBBLES = [
         ("A", "T", ["v8", "v9"]),
         ("A", "TT", ["v8"]),
     ]),
+    ("chr1", 6000, [
+        ("G", "T", ["v10"]),
+    ]),
+    ("chr1", 7000, [
+        ("C", "G", ["v11"]),
+    ]),
 ]
 
 GT_CHOICES = ["1|0", "0|1", "1|1", "0|0"]
@@ -232,11 +241,17 @@ def build_group(bubble, rng):
             elif pos == 4000:
                 gt = "0|0"
                 gp = ("0.9998", "0.0002", "0.0000")
+            elif pos == 6000:
+                gt = "1|1"
+                gp = ("0", "0", "1")
+            elif pos == 7000:
+                gt = "1|1"
+                gp = ("0", "0.001", "0.999")
             else:
                 gt = rng.choice(GT_CHOICES)
                 gp = sample_gp(rng)
                 
-            samples.append((gt, (float(gp[0]), float(gp[1]), float(gp[2]))))
+            samples.append((gt, gp))
             
         group.append({
             "chrom": chrom, "pos": pos, "ref": ref, "alt": alt,
@@ -292,7 +307,7 @@ def write_main(path, groups):
             for rec in g:
                 cells = []
                 for (gt, gp) in rec["samples"]:
-                    cells.append("%s:%s,%s,%s" % (gt, "%.3f" % gp[0], "%.3f" % gp[1], "%.3f" % gp[2]))
+                    cells.append("%s:%s,%s,%s" % (gt, gp[0], gp[1], gp[2]))
                 f.write("\t".join([rec["chrom"], str(rec["pos"]), ".", rec["ref"], rec["alt"], ".", ".", ".", "GT:GP"] + cells) + "\n")
 
 def write_sites(path, groups):
