@@ -47,6 +47,8 @@ run_case() {
 run_case max10 "${DATA}/expected/max10.txt"
 # max_alleles = 2 < 3 alleles: exercises the stable top-k score cut.
 run_case max2  "${DATA}/expected/max2.txt" 2
+# max_alleles = 1: only the top-scoring path per sample is kept.
+run_case max1  "${DATA}/expected/max1.txt" 1
 
 # Lockstep guard: a sites file whose ALT disagrees with the main stream must
 # abort with the synchronisation error rather than emit anything.
